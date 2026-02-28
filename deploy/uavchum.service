@@ -1,0 +1,15 @@
+[Unit]
+Description=UAVChum
+After=network.target
+
+[Service]
+Type=simple
+User=uavchum
+WorkingDirectory=/opt/uavchum
+EnvironmentFile=/opt/uavchum/.env
+ExecStart=/opt/uavchum/.venv/bin/gunicorn -c gunicorn.conf.py app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

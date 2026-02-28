@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.env
+deploy/
+docs/
+*.log
+*.ctl
+gunicorn.ctl
+README.md

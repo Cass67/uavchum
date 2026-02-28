@@ -1,0 +1,10 @@
+bind = "127.0.0.1:5555"  # overridden to 0.0.0.0 inside container
+workers = 1
+worker_class = "gthread"
+threads = 4
+timeout = 30
+keepalive = 5
+accesslog = "-"
+errorlog = "-"
+worker_tmp_dir = "/tmp"  # noqa: S108
+control_socket = "/tmp/gunicorn.ctl"  # noqa: S108

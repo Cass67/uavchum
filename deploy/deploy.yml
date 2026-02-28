@@ -1,0 +1,52 @@
+---
+# UAVChum — deploy to rocky (Podman Compose)
+# Usage: ansible-playbook deploy/deploy.yml
+- name: Deploy uavchum
+  hosts: rocky
+  become: false
+  vars:
+    app_dir: /home/cass/uavchum
+    archive: /tmp/uavchum-deploy.tar.gz
+
+  tasks:
+    - name: Ensure app directory exists
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create deployment archive
+      ansible.builtin.shell:
+        cmd: >
+          tar -czf {{ archive }}
+          --exclude='.git'
+          --exclude='__pycache__'
+          --exclude='*.pyc'
+          --exclude='.env'
+          --exclude='uavchum.tar'
+          --exclude='uavchum.png'
+          --exclude='*.md'
+          --exclude='docs'
+          -C {{ playbook_dir }}/../ .
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Upload and extract archive
+      ansible.builtin.unarchive:
+        src: "{{ archive }}"
+        dest: "{{ app_dir }}"
+        remote_src: false
+      notify: Restart stack
+
+    - name: Remove local archive
+      ansible.builtin.file:
+        path: "{{ archive }}"
+        state: absent
+      delegate_to: localhost
+      changed_when: false
+
+  handlers:
+    - name: Restart stack
+      ansible.builtin.shell:
+        cmd: podman compose build --no-cache && podman compose up -d --force-recreate
+        chdir: "{{ app_dir }}"

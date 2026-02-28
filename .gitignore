@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Local artifacts
+gunicorn.ctl
+uavchum.png
+
+# Env
+.env
+.env.*
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# AI tooling
+.claude/
+
+# Docs
+docs/*
+
+# Deploy (host-specific)
+deploy/inventory.ini

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060a14">
+    <link rel="manifest" href="/static/manifest.json">
+    <title>UAVChum</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.12/css/weather-icons.min.css"
+          integrity="sha384-8ioow4WaFbARExkpndAd5R4b//QLKDDHmz9yjO71m1D7+2vEb3nbPssEfRK1qKud" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=13">
+</head>
+<body>
+<div class="app">
+
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo-icon"><i class="wi wi-day-cloudy-gusts"></i></div>
+            <div>
+                <h1>UAVChum</h1>
+                <p class="tagline">Drone & Weather Intelligence</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="unit-toggle" id="windUnitToggle" title="Toggle wind units">kn</button>
+            <button type="button" class="unit-toggle" id="tempUnitToggle" title="Toggle temperature units">°C</button>
+            <button type="button" class="icon-btn" id="shareBtn" aria-label="Share" title="Share link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <title>Share</title>
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+            </button>
+            <button type="button" class="icon-btn" id="printBtn" aria-label="Print briefing" title="Print briefing">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <title>Print</title>
+                    <polyline points="6 9 6 2 18 2 18 9"/>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                    <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+            </button>
+            <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light/dark mode">
+                <!-- Moon: shown in dark mode (click → go light) -->
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <title>Moon</title>
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+                <!-- Sun: shown in light mode (click → go dark) -->
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <title>Sun</title>
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="search-wrap">
+        <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <title>Search</title>
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" id="locationSearch" class="location-search-input"
+                   placeholder="Search any city, town, or place…" autocomplete="off" spellcheck="false">
+            <button type="button" id="geoBtn" class="geo-btn" aria-label="Use my location" title="Use my location">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <title>Use my location</title>
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+                    <circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/>
+                </svg>
+            </button>
+            <div id="searchResults" class="search-results hidden"></div>
+        </div>
+    </div>
+
+    <div id="mainLoading" class="loading hidden">
+        <div class="spinner"></div><span>Fetching weather &amp; airspace…</span>
+    </div>
+
+    <div id="mainError" class="main-error hidden">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <title>Error</title>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/>
+        </svg>
+        <p></p>
+    </div>
+
+    <div id="mainPrompt" class="main-prompt">
+        <div class="main-prompt-icon">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <title>Start</title>
+                <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/>
+                <circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>
+                <line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="18" x2="16" y2="18"/>
+                <line x1="6" y1="8" x2="6" y2="16"/><line x1="18" y1="8" x2="18" y2="16"/>
+                <circle cx="12" cy="12" r="2"/>
+            </svg>
+        </div>
+        <p>Search a location to get your drone flight assessment, live weather, and nearby airspace data.</p>
+    </div>
+
+    <div id="mainContent" class="hidden fade-in">
+
+        <!-- ── Hero ─────────────────────────────────── -->
+        <section class="card card-hero" id="heroCard">
+            <div class="hero-bg"></div>
+            <div class="hero-content">
+                <div class="hero-top">
+                    <h2 class="hero-location" id="locationName"></h2>
+                    <span class="hero-tz" id="timezone"></span>
+                </div>
+
+                <div class="hero-verdict" id="heroVerdict">
+                    <div class="verdict-pill" id="droneVerdict"></div>
+                    <div class="verdict-summary" id="droneSummary"></div>
+                </div>
+
+                <div class="hero-weather-row">
+                    <i class="wi hero-wx-icon" id="currentIcon"></i>
+                    <span class="hero-temp" id="currentTemp"></span><span class="hero-unit">°C</span>
+                    <span class="hero-desc" id="currentDesc"></span>
+                </div>
+
+                <div class="hero-chips">
+                    <div class="chip"><i class="wi wi-thermometer-exterior"></i><span>Feels <b id="feelsLike"></b>°C</span></div>
+                    <div class="chip"><i class="wi wi-strong-wind"></i><span><b id="wind"></b></span></div>
+                    <div class="chip"><i class="wi wi-wind-beaufort-0"></i><span>Gusts <b id="gusts"></b> kn</span></div>
+                    <div class="chip"><i class="wi wi-humidity"></i><span><b id="humidity"></b>%</span></div>
+                    <div class="chip"><i class="wi wi-barometer"></i><span><b id="pressure"></b> hPa</span></div>
+                    <div class="chip"><i class="wi wi-cloud"></i><span>Cloud <b id="cloudCover"></b>%</span></div>
+                    <div class="chip hidden" id="visChip"><i class="wi wi-fog"></i><span>Vis <b id="visCurrent">—</b></span></div>
+                    <div class="chip hidden" id="ceilChip"><i class="wi wi-cloud-up"></i><span>Ceil <b id="ceilCurrent">—</b></span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Daylight Row ──────────────────────────── -->
+        <div id="daylightRow" class="daylight-row hidden">
+            <div class="dl-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <title>Sunrise</title>
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <div><div class="dl-label">Sunrise</div><div class="dl-val" id="sunriseVal">—</div></div>
+            </div>
+            <div class="dl-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <title>Golden hour AM</title>
+                    <path d="M17 18a5 5 0 0 0-10 0"/>
+                    <line x1="12" y1="9" x2="12" y2="2"/>
+                    <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/>
+                    <line x1="1" y1="18" x2="3" y2="18"/>
+                    <line x1="21" y1="18" x2="23" y2="18"/>
+                    <line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/>
+                </svg>
+                <div><div class="dl-label">Golden Hour AM</div><div class="dl-val" id="goldenMornVal">—</div></div>
+            </div>
+            <div class="dl-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <title>Golden hour PM</title>
+                    <path d="M17 18a5 5 0 0 0-10 0"/>
+                    <line x1="12" y1="9" x2="12" y2="2"/>
+                    <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/>
+                    <line x1="1" y1="18" x2="3" y2="18"/>
+                    <line x1="21" y1="18" x2="23" y2="18"/>
+                    <line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/>
+                </svg>
+                <div><div class="dl-label">Golden Hour PM</div><div class="dl-val" id="goldenEveVal">—</div></div>
+            </div>
+            <div class="dl-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <title>Sunset</title>
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <div><div class="dl-label">Sunset</div><div class="dl-val" id="sunsetVal">—</div></div>
+            </div>
+            <div class="dl-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <title>Night flying</title>
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/>
+                </svg>
+                <div><div class="dl-label">Night Flying</div><div class="dl-val">Check local rules</div></div>
+            </div>
+
+            <div class="dl-item" id="droneLawsTile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <title>Local drone laws</title>
+                    <path d="M12 3v4"/>
+                    <path d="M7 7h10"/>
+                    <rect x="9" y="7" width="6" height="6" rx="1"/>
+                    <path d="M6.5 13.5l-2 2"/>
+                    <path d="M17.5 13.5l2 2"/>
+                    <path d="M10 13v6"/>
+                    <path d="M14 13v6"/>
+                </svg>
+                <div>
+                    <div class="dl-label">Drone Laws</div>
+                    <div class="dl-val"><a id="droneLawsLink" class="dl-link" href="#" target="_blank" rel="noopener noreferrer">Find local rules</a></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Airspace Map ──────────────────────────── -->
+        <section class="card card-map">
+            <div class="card-header">
+                <h2>Airspace &amp; No-Fly Zones</h2>
+            </div>
+            <div id="droneMap" class="map-container map-container-lg"></div>
+            <div id="layerToggles" class="layer-toggles hidden"></div>
+            <div id="nfzLoading" class="nfz-loading hidden">
+                <div class="spinner"></div><span>Loading airspace data…</span>
+            </div>
+            <div id="nfzSummary" class="nfz-summary hidden"></div>
+        </section>
+
+        <!-- ── Two-column grid ──────────────────────── -->
+        <div class="main-grid">
+
+            <div class="col-left">
+
+                <!-- Airports -->
+                            <section class="card hidden" id="airportsCard">
+                    <div class="card-header">
+                        <h2>Nearby Airports</h2>
+                        <span class="badge badge-cyan" id="airportCount"></span>
+                    </div>
+                    <div id="airportsContent"></div>
+                </section>
+
+                <!-- Weather Assessment -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>Weather Assessment</h2>
+                        <select id="droneClassSelect" class="drone-class-select" title="Drone class" aria-label="Drone class">
+                            <option value="consumer" selected>Consumer</option>
+                            <option value="mini">Mini (&le;250g)</option>
+                            <option value="pro">Pro</option>
+                        </select>
+                    </div>
+                    <div id="droneFactors" class="drone-factors"></div>
+                </section>
+
+                <!-- Data Sources -->
+                            <section class="card hidden" id="sourcesCard">
+                    <div class="card-header"><h2>Data Sources</h2></div>
+                    <div class="sources-list" id="sourcesList"></div>
+                </section>
+
+
+
+            </div><!-- /.col-left -->
+
+            <div class="col-right">
+
+                <!-- 24-Hour Window -->
+                <section class="card">
+                    <div class="card-header"><h2>24-Hour Window</h2></div>
+                    <div class="hourly-scroll" id="hourlyScroll"></div>
+                </section>
+
+                <!-- 7-Day Forecast -->
+                <section class="card">
+                    <div class="card-header"><h2>7-Day Forecast</h2></div>
+                    <div class="forecast-list" id="forecastList"></div>
+                </section>
+
+                <!-- Pre-Flight Checklist -->
+                <section class="card">
+                    <div class="card-header"><h2>Pre-Flight Checklist</h2></div>
+                    <div class="drone-checklist" id="droneChecklist"></div>
+                </section>
+
+            </div><!-- /.col-right -->
+
+        </div><!-- /.main-grid -->
+
+        <!-- ── Aviation Briefing (Moved below grid for long content) ──────────────────────── -->
+        <section class="card hidden" id="aviationCard">
+            <div class="card-header">
+                <h2>Aviation Briefing</h2>
+                <div class="icao-input-wrap">
+                    <input type="text" id="icaoInput" class="icao-input" placeholder="ICAO" maxlength="4" spellcheck="false" autocomplete="off" aria-label="ICAO station code" inputmode="text">
+                    <button type="button" id="icaoBtn" class="btn-go">GO</button>
+                </div>
+            </div>
+            <div id="aviationLoading" class="loading hidden"><div class="spinner"></div><span>Fetching aviation data…</span></div>
+            <div id="aviationContent" class="hidden fade-in">
+                <section class="card card-station hidden" id="stationCard">
+                    <div class="station-row">
+                        <div class="station-id" id="stationId"></div>
+                        <div class="station-info">
+                            <div class="station-name" id="stationName"></div>
+                            <div class="station-meta" id="stationMeta"></div>
+                        </div>
+                        <div class="flight-cat-pill" id="flightCat"></div>
+                    </div>
+                </section>
+                <section class="card hidden" id="decodedMetarCard">
+                    <div class="card-header"><h2>Current Conditions</h2><span class="badge badge-cyan" id="metarTime"></span><button type="button" class="card-collapse-btn" id="metarCollapseBtn" aria-label="Toggle METAR"><svg viewBox="0 0 10 6" width="10" height="10"><title>Toggle</title><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></button></div>
+                    <div class="card-collapsible" id="metarBody">
+                    <div class="metar-grid" id="metarGrid"></div>
+                    <div class="metar-raw-wrap">
+                        <div class="label-small">Raw METAR</div>
+                        <div class="raw-block" id="metarRaw"></div>
+                    </div>
+                    <div id="metarHistory" class="metar-history"></div>
+                    </div>
+                </section>
+                <section class="card">
+                    <div class="card-header"><h2>Terminal Forecast (TAF)</h2></div>
+                    <div id="tafContent"></div>
+                </section>
+                <section class="card">
+                    <div class="card-header">
+                        <h2>SIGMETs / AIRMETs</h2>
+                        <span class="badge badge-amber" id="alertCount"></span>
+                    </div>
+                    <div id="alertContent"></div>
+                </section>
+                <section class="card collapsed" id="pirepCard">
+                    <div class="card-header">
+                        <h2>Pilot Reports (PIREPs)</h2>
+                        <span class="badge badge-cyan" id="pirepCount"></span>
+                        <button type="button" class="card-collapse-btn" id="pirepCollapseBtn" aria-label="Toggle PIREPs"><svg viewBox="0 0 10 6" width="10" height="10"><title>Toggle</title><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></button>
+                    </div>
+                    <div class="card-collapsible">
+                        <div id="pirepContent"></div>
+                    </div>
+                </section>
+                <section class="card">
+                    <div class="card-header">
+                        <h2>NOTAMs</h2>
+                        <span class="badge badge-amber" id="notamCount"></span>
+                    </div>
+                    <div id="notamContent"></div>
+                </section>
+            </div>
+        </section>
+
+    </div><!-- /#mainContent -->
+
+</div><!-- /.app -->
+
+<script nonce="{{ csp_nonce }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script nonce="{{ csp_nonce }}" src="/static/app.js?v=26"></script>
+</body>
+</html>
