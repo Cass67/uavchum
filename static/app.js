@@ -4,6 +4,7 @@ const $ = s => document.querySelector(s);
 let currentElevation = null;
 let currentWxData    = null;
 let _adsbTimer       = null;
+let _lightningTimer  = null;
 
 const units = {
     wind: localStorage.getItem('windUnit') || 'kn',
@@ -301,7 +302,8 @@ async function loadLocation(lat, lon, name, country, elev, countryName) {
     currentCountryName = (countryName || '').trim();
     currentElevation = (elev != null && elev !== '') ? parseFloat(elev) : null;
 
-    if (_adsbTimer) { clearInterval(_adsbTimer); _adsbTimer = null; }
+    if (_adsbTimer)      { clearInterval(_adsbTimer);      _adsbTimer      = null; }
+    if (_lightningTimer) { clearInterval(_lightningTimer); _lightningTimer = null; }
 
     // URL state
     const url = new URL(window.location);
@@ -362,6 +364,7 @@ async function loadLocation(lat, lon, name, country, elev, countryName) {
         updateVisibilityCeiling(as.airports || []);
         renderSources(as.sources);
         startAdsbRefresh();
+        startLightningRefresh();
 
         // Auto-load aviation briefing for nearest airport
         const nearestAirport = (as.airports || [])
@@ -949,6 +952,7 @@ const LAYER_DEFS  = [
     { key:'tfr',         label:'TFRs',                color:'#ef4444' },
     { key:'airports',    label:'Airports',             color:'#06b6d4' },
     { key:'adsb',        label:'ADS-B Traffic',         color:'#f97316' },
+    { key:'lightning',   label:'Lightning Strikes',      color:'#fbbf24' },
 ];
 function oaipKey(t) {
     if ([1,2,3].includes(t))     return 'oaip_danger';
@@ -1166,7 +1170,7 @@ function renderLayerToggles() {
     const pop = LAYER_DEFS.filter(d => {
         const group = droneLayerGroups[d.key];
         if (!group) return false;
-        if (d.key === 'adsb') return true;
+        if (d.key === 'adsb' || d.key === 'lightning') return true;
         return group.getLayers().length > 0;
     });
     if (!pop.length) { $('#layerToggles').classList.add('hidden'); return; }
@@ -1308,6 +1312,82 @@ async function lookupFlightRoute(callsign, popupEl) {
         routeDiv.replaceChildren();
         routeDiv.appendChild(el('span', 'adsb-route-none', 'Lookup failed'));
     }
+}
+
+/* ── Lightning strikes layer ───────────────────────────────────── */
+async function renderLightningLayer() {
+    if (!droneMap || !droneLayerGroups.lightning) return;
+    if (droneMap.hasLayer(droneLayerGroups.lightning)) droneMap.removeLayer(droneLayerGroups.lightning);
+    droneLayerGroups.lightning = L.layerGroup();
+
+    try {
+        const resp = await fetch(`/api/lightning?lat=${currentLat}&lon=${currentLon}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        (data.strikes || []).forEach(s => {
+            const age = s.age_s;
+            let color, opacity;
+            if (age < 300)        { color = '#ef4444'; opacity = 0.9; }      // < 5 min  red
+            else if (age < 600)   { color = '#f97316'; opacity = 0.75; }     // < 10 min orange
+            else if (age < 1200)  { color = '#fbbf24'; opacity = 0.6; }      // < 20 min yellow
+            else                  { color = '#94a3b8'; opacity = 0.4; }      // < 30 min grey
+
+            const ageLabel = age < 60 ? `${age}s ago`
+                : age < 3600 ? `${Math.round(age / 60)}m ago`
+                : `${Math.round(age / 3600)}h ago`;
+
+            const popup = document.createElement('div');
+            popup.appendChild(el('span', 'popup-class lightning', 'Lightning'));
+            popup.appendChild(document.createElement('br'));
+            popup.appendChild(document.createTextNode(ageLabel));
+
+            L.circleMarker([s.lat, s.lon], {
+                radius: 5,
+                color,
+                fillColor: color,
+                fillOpacity: opacity,
+                weight: 1,
+                opacity,
+            }).bindPopup(popup).addTo(droneLayerGroups.lightning);
+        });
+
+        updateLightningFactor(data.nearest_nm, data.count);
+    } catch (e) {
+        console.warn('Lightning fetch failed:', e);
+    }
+
+    droneLayerGroups.lightning.addTo(droneMap);
+    renderLayerToggles();
+}
+
+function startLightningRefresh() {
+    if (_lightningTimer) clearInterval(_lightningTimer);
+    renderLightningLayer();
+    _lightningTimer = setInterval(renderLightningLayer, 60_000);
+}
+
+function updateLightningFactor(nearestNm, count) {
+    const wrap = $('#droneFactors');
+    if (!wrap) return;
+    // Remove any previous lightning factor
+    wrap.querySelector('.lightning-factor')?.remove();
+
+    if (nearestNm == null || count === 0) return;
+
+    let status, note;
+    if (nearestNm <= 10)       { status = 'danger';  note = `Lightning ${nearestNm} nm away — do NOT fly`; }
+    else if (nearestNm <= 25)  { status = 'caution'; note = `Lightning ${nearestNm} nm away — monitor closely`; }
+    else                       { status = 'caution'; note = `Lightning ${nearestNm} nm away — stay alert`; }
+
+    const factor = el('div', `drone-factor ${status} lightning-factor`);
+    factor.appendChild(el('div', `drone-factor-status ${status}`));
+    const info = el('div', 'drone-factor-info');
+    info.appendChild(el('div', 'drone-factor-name', 'Lightning'));
+    info.appendChild(el('div', 'drone-factor-value', `${count} strike${count !== 1 ? 's' : ''} in 30 min`));
+    info.appendChild(el('div', 'drone-factor-note', note));
+    factor.appendChild(info);
+    wrap.appendChild(factor);
 }
 
 /* ── Airports ──────────────────────────────────────────────────── */
