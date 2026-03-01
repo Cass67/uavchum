@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 from functools import lru_cache
+from http.cookiejar import DefaultCookiePolicy
 from re import fullmatch
 
 import defusedxml.ElementTree as ET  # noqa: N817
@@ -15,6 +16,8 @@ import requests
 from flask import Flask, g, jsonify, render_template, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
@@ -36,6 +39,19 @@ limiter = Limiter(
     default_limits=["500 per day", "100 per hour", "2 per second"],
     storage_uri=os.environ.get("RATELIMIT_STORAGE_URL", "memory://"),
 )
+
+# ── HTTP Session with connection pooling ─────────────────────────────
+_session = requests.Session()
+_retry_strategy = Retry(
+    total=0,
+    backoff_factor=0,
+    status_forcelist=[],
+)
+_adapter = HTTPAdapter(max_retries=_retry_strategy, pool_connections=10, pool_maxsize=10)
+_session.mount("http://", _adapter)
+_session.mount("https://", _adapter)
+_session.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+_session.max_redirects = 3
 
 # ── OpenAIP Cache ───────────────────────────────────────────────────
 _openaip_cache: dict = {}
@@ -155,7 +171,7 @@ def fetch_openaip(country_code: str) -> tuple:
         url = (
             f"https://storage.googleapis.com/29f98e10-a489-4c82-ae5e-489dbcd4912f/{cc}_asp.geojson"
         )
-        r = requests.get(url, timeout=30)
+        r = _session.get(url, timeout=30)
         if r.status_code == 200:
             data = r.json()
             ts = int(time.time())
@@ -175,7 +191,7 @@ def _country_from_latlon(lat_r: float, lon_r: float) -> str:
     Returns '' if lookup fails so callers can fall through gracefully.
     """
     try:
-        r = requests.get(
+        r = _session.get(
             "https://nominatim.openstreetmap.org/reverse",
             params={"lat": lat_r, "lon": lon_r, "format": "json", "zoom": 3},
             headers={"User-Agent": "UAVChum/1.0 (uavchum.app)"},
@@ -551,7 +567,7 @@ def api_search():
     if len(q) > _SEARCH_MAX:
         return jsonify({"error": "query too long"}), 400
     try:
-        r = requests.get(
+        r = _session.get(
             "https://geocoding-api.open-meteo.com/v1/search",
             params={"name": q, "count": 10, "language": "en", "format": "json"},
             timeout=10,
@@ -586,7 +602,7 @@ def api_weather():
     if not _valid_lat(lat) or not _valid_lon(lon):
         return jsonify({"error": "valid lat/lon required"}), 400
     try:
-        r = requests.get(
+        r = _session.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": lat,
@@ -758,7 +774,7 @@ def api_aviation():  # noqa: C901
 
     # METAR
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/metar",
             params={"ids": station, "format": "json", "hours": 6},
             timeout=10,
@@ -773,7 +789,7 @@ def api_aviation():  # noqa: C901
 
     # TAF
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/taf",
             params={"ids": station, "format": "json"},
             timeout=10,
@@ -785,7 +801,7 @@ def api_aviation():  # noqa: C901
 
     # SIGMET/AIRMET
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/airsigmet",
             params={"format": "json"},
             timeout=10,
@@ -809,7 +825,7 @@ def api_aviation():  # noqa: C901
 
     # PIREPs
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/pirep",
             params={"id": station, "format": "json", "distance": 100, "age": 3},
             timeout=10,
@@ -823,7 +839,7 @@ def api_aviation():  # noqa: C901
     result["notam_source"] = None
     if station.startswith("C"):
         try:
-            r = requests.get(
+            r = _session.get(
                 "https://plan.navcanada.ca/weather/api/alpha/",
                 params={"site": station, "alpha": "notam"},
                 headers={"User-Agent": "UAVChum/1.0"},
@@ -848,7 +864,7 @@ def api_aviation():  # noqa: C901
     # Primary international: ANB Data (free, no auth, global ICAO coverage)
     if not result["notams"]:
         try:
-            r = requests.get(
+            r = _session.get(
                 "https://api.anbdata.com/anb/states/notams/notams-list",
                 params={"client_id": "test", "icao_location": station},
                 headers={"User-Agent": "UAVChum/1.0"},
@@ -871,7 +887,7 @@ def api_aviation():  # noqa: C901
     # Fallback: pull any SIGMETs mentioning the station from the XML dataserver
     if not result["notams"]:
         try:
-            r = requests.get(
+            r = _session.get(
                 "https://aviationweather.gov/api/data/dataserver",
                 params={
                     "requestType": "retrieve",
@@ -921,7 +937,7 @@ def api_airspace():  # noqa: C901
 
     # FAA Controlled Airspace Class B / C / D
     try:
-        r = requests.get(
+        r = _session.get(
             "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services"
             "/Class_Airspace/FeatureServer/0/query",
             params={
@@ -947,7 +963,7 @@ def api_airspace():  # noqa: C901
 
     # FAA UAS Facility Map (LAANC)
     try:
-        r = requests.get(
+        r = _session.get(
             "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services"
             "/FAA_UAS_FacilityMap_Data_Primary/FeatureServer/0/query",
             params={
@@ -968,7 +984,7 @@ def api_airspace():  # noqa: C901
 
     # TFRs
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/tfr",
             params={"format": "json"},
             timeout=8,
@@ -995,7 +1011,7 @@ def api_airspace():  # noqa: C901
 
     # Nearby airports via METAR bbox
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/metar",
             params={
                 "bbox": f"{lat - delta},{lon - delta},{lat + delta},{lon + delta}",
@@ -1094,7 +1110,7 @@ def api_station():
     if not _valid_station(station):
         return jsonify({"error": "valid ICAO station code required"}), 400
     try:
-        r = requests.get(
+        r = _session.get(
             "https://aviationweather.gov/api/data/airport",
             params={"ids": station, "format": "json"},
             timeout=10,
@@ -1115,7 +1131,7 @@ def api_flightroute():
     if not callsign or not fullmatch(r"[A-Z0-9]{3,8}", callsign):
         return jsonify({"error": "valid callsign required"}), 400
     try:
-        r = requests.get(
+        r = _session.get(
             f"https://api.adsbdb.com/v0/callsign/{callsign}",
             headers={"User-Agent": "UAVChum/1.0"},
             timeout=8,
@@ -1169,7 +1185,7 @@ def api_adsb():
     data = None
     for url in apis:
         try:
-            r = requests.get(url, timeout=8)
+            r = _session.get(url, timeout=8)
             r.raise_for_status()
             data = r.json()
             break
