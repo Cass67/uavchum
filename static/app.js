@@ -921,8 +921,12 @@ function renderAviation(d) {
 }
 
 /* ── Map constants ─────────────────────────────────────────────── */
-const TILE_URL  = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>';
+const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const TILE_ATTR  = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>';
+const RADAR_ATTR = 'Radar © <a href="https://www.rainviewer.com">RainViewer</a>';
+
+let _radarLayer        = null;
+let _radarRefreshTimer = null;
 
 const FAA_COLORS = {
     B: { color: '#ef4444', label: 'Class B' },
@@ -949,6 +953,7 @@ const LAYER_DEFS  = [
     { key:'tfr',         label:'TFRs',                color:'#ef4444' },
     { key:'airports',    label:'Airports',             color:'#06b6d4' },
     { key:'adsb',        label:'ADS-B Traffic',         color:'#f97316' },
+    { key:'radar',       label:'Radar',                  color:'#22d3ee' },
 ];
 function oaipKey(t) {
     if ([1,2,3].includes(t))     return 'oaip_danger';
@@ -967,9 +972,13 @@ function fmtAlt(lim) {
 
 /* ── Map setup ─────────────────────────────────────────────────── */
 function setupDroneMap(lat, lon, name) {
+    // Tear down radar tile layer explicitly (it survives the TileLayer filter below)
+    if (_radarLayer) { droneMap?.removeLayer(_radarLayer); _radarLayer = null; }
+    if (_radarRefreshTimer) { clearInterval(_radarRefreshTimer); _radarRefreshTimer = null; }
+
     Object.values(droneLayerGroups).forEach(g => { try { droneMap?.removeLayer(g); } catch(e){} });
     droneLayerGroups = {};
-    LAYER_DEFS.forEach(d => { droneLayerGroups[d.key] = L.layerGroup(); });
+    LAYER_DEFS.forEach(d => { if (d.key !== 'radar') droneLayerGroups[d.key] = L.layerGroup(); });
 
     if (droneMap) {
         droneMap.eachLayer(l => { if (!(l instanceof L.TileLayer)) droneMap.removeLayer(l); });
@@ -996,12 +1005,47 @@ function setupDroneMap(lat, lon, name) {
     locPopup.appendChild(document.createElement('br'));
     locPopup.appendChild(document.createTextNode('Your location'));
     L.marker([lat, lon], { icon: pin }).bindPopup(locPopup).addTo(droneMap);
+
+    // Kick off async radar fetch — don't block map render
+    loadRadarLayer();
+}
+
+async function loadRadarLayer() {
+    if (!droneMap) return;
+    try {
+        const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const frames = data.radar?.past;
+        if (!frames?.length) return;
+        const latest = frames[frames.length - 1];
+        const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/4/1_1.png`;
+
+        if (_radarLayer) droneMap.removeLayer(_radarLayer);
+        _radarLayer = L.tileLayer(tileUrl, {
+            attribution: RADAR_ATTR,
+            opacity: 0.65,
+            zIndex: 5,
+            tileSize: 256,
+        });
+        droneLayerGroups.radar = _radarLayer;
+        // Only add to map if the toggle isn't currently off
+        const radarToggle = document.querySelector('[data-layer="radar"]');
+        if (!radarToggle || radarToggle.checked) _radarLayer.addTo(droneMap);
+
+        // Refresh every 5 min — only set up once
+        if (!_radarRefreshTimer) {
+            _radarRefreshTimer = setInterval(loadRadarLayer, 300_000);
+        }
+    } catch (e) {
+        console.warn('Radar fetch failed:', e);
+    }
 }
 
 /* ── Airspace on map ───────────────────────────────────────────── */
 function renderAirspaceOnMap(data) {
     if (!droneMap) return;
-    LAYER_DEFS.forEach(d => { droneLayerGroups[d.key] = L.layerGroup(); });
+    LAYER_DEFS.forEach(d => { if (d.key !== 'radar') droneLayerGroups[d.key] = L.layerGroup(); });
     const alerts = [];
 
     // FAA Class B/C/D
@@ -1128,7 +1172,8 @@ function renderAirspaceOnMap(data) {
     });
 
     LAYER_DEFS.forEach(d => {
-        if (droneLayerGroups[d.key].getLayers().length > 0) droneLayerGroups[d.key].addTo(droneMap);
+        const g = droneLayerGroups[d.key];
+        if (g && typeof g.getLayers === 'function' && g.getLayers().length > 0) g.addTo(droneMap);
     });
     renderLayerToggles();
 
@@ -1166,17 +1211,22 @@ function renderLayerToggles() {
     const pop = LAYER_DEFS.filter(d => {
         const group = droneLayerGroups[d.key];
         if (!group) return false;
-        if (d.key === 'adsb') return true;
+        if (d.key === 'adsb' || d.key === 'radar') return true;
         return group.getLayers().length > 0;
     });
     if (!pop.length) { $('#layerToggles').classList.add('hidden'); return; }
     const toggles = $('#layerToggles');
+    // Preserve existing checked state before rebuilding
+    const checkedState = {};
+    toggles.querySelectorAll('input[data-layer]').forEach(cb => {
+        checkedState[cb.dataset.layer] = cb.checked;
+    });
     toggles.replaceChildren();
     pop.forEach(d => {
         const label = el('label', 'layer-toggle');
         const input = document.createElement('input');
         input.type = 'checkbox';
-        input.checked = true;
+        input.checked = d.key in checkedState ? checkedState[d.key] : true;
         input.dataset.layer = d.key;
         const dot = el('span', 'ldot');
         dot.dataset.color = '1';
@@ -1267,7 +1317,8 @@ async function renderAdsbLayer() {
         console.warn('ADS-B fetch failed:', e);
     }
 
-    droneLayerGroups.adsb.addTo(droneMap);
+    const adsbToggle = document.querySelector('[data-layer="adsb"]');
+    if (!adsbToggle || adsbToggle.checked) droneLayerGroups.adsb.addTo(droneMap);
     renderLayerToggles();
 }
 
