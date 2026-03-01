@@ -12,7 +12,7 @@
           integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=13">
+    <link rel="stylesheet" href="/static/style.css?v=14">
 </head>
 <body>
 <div class="app">
@@ -132,21 +132,21 @@
                 </div>
 
                 <div class="hero-chips">
-                    <div class="chip"><i class="wi wi-thermometer-exterior"></i><span>Feels <b id="feelsLike"></b>°C</span></div>
-                    <div class="chip"><i class="wi wi-strong-wind"></i><span><b id="wind"></b></span></div>
-                    <div class="chip"><i class="wi wi-wind-beaufort-0"></i><span>Gusts <b id="gusts"></b> kn</span></div>
-                    <div class="chip"><i class="wi wi-humidity"></i><span><b id="humidity"></b>%</span></div>
-                    <div class="chip"><i class="wi wi-barometer"></i><span><b id="pressure"></b> hPa</span></div>
-                    <div class="chip"><i class="wi wi-cloud"></i><span>Cloud <b id="cloudCover"></b>%</span></div>
-                    <div class="chip hidden" id="visChip"><i class="wi wi-fog"></i><span>Vis <b id="visCurrent">—</b></span></div>
-                    <div class="chip hidden" id="ceilChip"><i class="wi wi-cloud-up"></i><span>Ceil <b id="ceilCurrent">—</b></span></div>
+                    <div class="chip" data-tooltip="Perceived temperature accounting for wind chill and humidity"><i class="wi wi-thermometer-exterior"></i><span>Feels <b id="feelsLike"></b>°C</span></div>
+                    <div class="chip" data-tooltip="Surface wind speed and direction at 10 m AGL"><i class="wi wi-strong-wind"></i><span><b id="wind"></b></span></div>
+                    <div class="chip" data-tooltip="Peak wind gust speed — gusts above 30 km/h affect most drones"><i class="wi wi-wind-beaufort-0"></i><span>Gusts <b id="gusts"></b> kn</span></div>
+                    <div class="chip" data-tooltip="Relative humidity — above 85% may affect electronics and reduce visibility"><i class="wi wi-humidity"></i><span><b id="humidity"></b>%</span></div>
+                    <div class="chip" data-tooltip="Barometric pressure — falling pressure often signals approaching weather"><i class="wi wi-barometer"></i><span><b id="pressure"></b> hPa</span></div>
+                    <div class="chip" data-tooltip="Cloud coverage — affects light levels and visual line of sight"><i class="wi wi-cloud"></i><span>Cloud <b id="cloudCover"></b>%</span></div>
+                    <div class="chip hidden" id="visChip" data-tooltip="Horizontal visibility — most VLOS rules require a minimum of 3 SM / 5 km"><i class="wi wi-fog"></i><span>Vis <b id="visCurrent">—</b></span></div>
+                    <div class="chip hidden" id="ceilChip" data-tooltip="Cloud ceiling — base of the lowest broken or overcast layer"><i class="wi wi-cloud-up"></i><span>Ceil <b id="ceilCurrent">—</b></span></div>
                 </div>
             </div>
         </section>
 
         <!-- ── Daylight Row ──────────────────────────── -->
         <div id="daylightRow" class="daylight-row hidden">
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="Sun at the horizon — start of the daylight flying window">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Sunrise</title>
                     <circle cx="12" cy="12" r="5"/>
@@ -157,7 +157,7 @@
                 </svg>
                 <div><div class="dl-label">Sunrise</div><div class="dl-val" id="sunriseVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="~30 min after sunrise — soft directional light ideal for aerial photography">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Golden hour AM</title>
                     <path d="M17 18a5 5 0 0 0-10 0"/>
@@ -169,7 +169,7 @@
                 </svg>
                 <div><div class="dl-label">Golden Hour AM</div><div class="dl-val" id="goldenMornVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="~30 min before sunset — warm directional light ideal for aerial photography">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Golden hour PM</title>
                     <path d="M17 18a5 5 0 0 0-10 0"/>
@@ -181,7 +181,7 @@
                 </svg>
                 <div><div class="dl-label">Golden Hour PM</div><div class="dl-val" id="goldenEveVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="Sun 6° below horizon — first usable daylight; start of legal flying time in most countries">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Civil dawn</title>
                     <path d="M17 18a5 5 0 0 0-10 0"/>
@@ -194,7 +194,7 @@
                 </svg>
                 <div><div class="dl-label">Civil Dawn</div><div class="dl-val" id="civilDawnVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="Sun at the horizon — end of the daylight flying window">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Sunset</title>
                     <circle cx="12" cy="12" r="5"/>
@@ -205,7 +205,7 @@
                 </svg>
                 <div><div class="dl-label">Sunset</div><div class="dl-val" id="sunsetVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="Sun 6° below horizon — end of civil twilight; night flying rules apply after this time">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Civil dusk</title>
                     <path d="M17 18a5 5 0 0 0-10 0"/>
@@ -218,7 +218,7 @@
                 </svg>
                 <div><div class="dl-label">Civil Dusk</div><div class="dl-val" id="civilDuskVal">—</div></div>
             </div>
-            <div class="dl-item">
+            <div class="dl-item" data-tooltip="Drone flight after civil dusk typically requires a waiver or special authorisation — check local rules">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <title>Night flying</title>
                     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/>
@@ -226,7 +226,7 @@
                 <div><div class="dl-label">Night Flying</div><div class="dl-val">Check local rules</div></div>
             </div>
 
-            <div class="dl-item" id="droneLawsTile">
+            <div class="dl-item" id="droneLawsTile" data-tooltip="Official UAV regulations for the selected country">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <title>Local drone laws</title>
                     <path d="M12 3v4"/>
@@ -387,6 +387,6 @@
 
 <script nonce="{{ csp_nonce }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-<script nonce="{{ csp_nonce }}" src="/static/app.js?v=26"></script>
+<script nonce="{{ csp_nonce }}" src="/static/app.js?v=27"></script>
 </body>
 </html>

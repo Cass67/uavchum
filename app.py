@@ -1325,15 +1325,17 @@ def api_adsb():
     if lat is None or lon is None or not _valid_lat(lat) or not _valid_lon(lon):
         return jsonify({"error": "valid lat/lon required"}), 400
     radius_nm = 150
+    rlat, rlon = round(lat, 4), round(lon, 4)
     apis = [
-        f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius_nm}",
-        f"https://api.airplanes.live/v2/point/{lat}/{lon}/{radius_nm}",
-        f"https://opendata.adsb.fi/api/v3/lat/{lat}/lon/{lon}/dist/{radius_nm}",
+        f"https://api.adsb.lol/v2/lat/{rlat}/lon/{rlon}/dist/{radius_nm}",
+        f"https://api.airplanes.live/v2/point/{rlat}/{rlon}/{radius_nm}",
+        f"https://opendata.adsb.fi/api/v3/lat/{rlat}/lon/{rlon}/dist/{radius_nm}",
     ]
+    _ua = {"User-Agent": "UAVChum/1.0 (uavchum.app)"}
     data = None
     for url in apis:
         try:
-            r = _session.get(url, timeout=8)
+            r = _session.get(url, headers=_ua, timeout=8)
             r.raise_for_status()
             data = r.json()
             break
@@ -1416,8 +1418,10 @@ def _blitzortung_thread():  # noqa: C901
     import websocket  # noqa: PLC0415  re-import under canonical name for readability
 
     url_idx = 0
+    reconnect_delay = 5
     while True:
         url = _BLITZORTUNG_URLS[url_idx % len(_BLITZORTUNG_URLS)]
+        did_connect = False
 
         def on_message(_ws, message):
             try:
@@ -1433,7 +1437,9 @@ def _blitzortung_thread():  # noqa: C901
                 pass
 
         def on_open(_ws, _url=url):
+            nonlocal did_connect
             global _blitzortung_connected
+            did_connect = True
             _blitzortung_connected = True
             logger.info("Blitzortung connected: %s", _url)
 
@@ -1460,8 +1466,13 @@ def _blitzortung_thread():  # noqa: C901
             logger.warning("Blitzortung thread exception: %s", exc)
             _blitzortung_connected = False
 
+        if did_connect:
+            reconnect_delay = 5  # successful session — reset backoff
+        else:
+            reconnect_delay = min(reconnect_delay * 2, 120)  # exponential backoff up to 2 min
+
         url_idx += 1
-        time.sleep(5)
+        time.sleep(reconnect_delay)
 
 
 threading.Thread(target=_blitzortung_thread, daemon=True, name="blitzortung").start()

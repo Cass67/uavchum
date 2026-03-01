@@ -189,6 +189,7 @@ function svgEl(tag) {
 const _ICON_RE    = /^wi-[\w-]+$/;
 const _STATUS_OK  = new Set(['good', 'caution', 'danger']);
 const _FC_OK      = new Set(['VFR', 'MVFR', 'IFR', 'LIFR']);
+const _FC_TOOLTIP  = { VFR: 'VFR — Visual Flight Rules: ceiling >3000 ft & visibility >5 SM. Good conditions.', MVFR: 'MVFR — Marginal VFR: ceiling 1000–3000 ft or visibility 3–5 SM. Caution advised.', IFR: 'IFR — Instrument Flight Rules: ceiling 500–999 ft or visibility 1–3 SM. Poor conditions.', LIFR: 'LIFR — Low IFR: ceiling <500 ft or visibility <1 SM. Very poor conditions.' };
 
 function safeIcon(s)   { return typeof s === 'string' && _ICON_RE.test(s) ? s : 'wi-na'; }
 function safeStatus(s) { return _STATUS_OK.has(s) ? s : 'good'; }
@@ -772,6 +773,7 @@ function renderAviation(d) {
         const fc = $('#flightCat');
         fc.textContent = m.flight_cat || '—';
         fc.className = 'flight-cat-pill ' + safeFC(m.flight_cat || '');
+        if (_FC_TOOLTIP[m.flight_cat]) fc.dataset.tooltip = _FC_TOOLTIP[m.flight_cat];
     } else {
         $('#stationCard').classList.add('hidden');
     }
@@ -785,6 +787,7 @@ function renderAviation(d) {
         grid.replaceChildren();
         const item = (label, value, sub) => {
             const row = el('div', 'mg-item');
+            if (METAR_TOOLTIPS[label]) row.dataset.tooltip = METAR_TOOLTIPS[label];
             row.appendChild(el('div', 'mg-label', label));
             row.appendChild(el('div', 'mg-value', value));
             if (sub) row.appendChild(el('div', 'mg-sub', sub));
@@ -984,6 +987,29 @@ const LAYER_DEFS  = [
     { key:'radar',       label:'Radar',                  color:'#22d3ee' },
     { key:'lightning',   label:'Lightning Strikes',      color:'#fbbf24' },
 ];
+const LAYER_TOOLTIP = {
+    oaip_danger: 'Restricted, Danger & Prohibited zones — drone flight typically requires authorisation',
+    oaip_ctr:    'Control Zone / Aerodrome Traffic Zone — ATC permission required for drone ops',
+    oaip_tma:    'Terminal Manoeuvring Area / Control Area — upper-level airspace boundaries',
+    oaip_other:  'Gliding areas, warning zones, and other designated airspace',
+    faa_class:   'FAA Class B (red), C (amber) and D (blue) controlled airspace — ATC authorisation required',
+    uasfm:       'LAANC facility map — maximum drone altitude (ft) without ATC authorisation',
+    tfr:         'Temporary Flight Restriction — active TFR in effect; no drone ops without a waiver',
+    airports:    '5 nm proximity zone — check LAANC or contact ATC before flying near airports',
+    adsb:        'Live ADS-B traffic — aircraft positions updated every ~8 seconds',
+    radar:       'NEXRAD precipitation radar from RainViewer — refreshed every 5 min',
+    lightning:   'Live lightning strikes from Blitzortung — last 30 minutes within 150 nm',
+};
+const METAR_TOOLTIPS = {
+    'Temperature': 'Station air temperature — affects battery performance and drone efficiency',
+    'Dew Point':   'Dew point — spread < 3°C between temp and dew point indicates fog or mist risk',
+    'Wind':        'Surface wind direction and speed at the reporting station',
+    'Visibility':  'Horizontal visibility — VLOS operations typically require ≥ 3 SM / 5 km',
+    'Altimeter':   'QNH pressure setting — set on altimeter to read altitude above sea level',
+    'Clouds':      'Cloud layers: FEW=1–2, SCT=3–4, BKN=5–7, OVC=8 oktas (base heights in ft AGL)',
+    'Weather':     'Present weather: precipitation type, intensity, fog, or other phenomena',
+    'Temp':        'Station air temperature',
+};
 function oaipKey(t) {
     if ([1,2,3].includes(t))     return 'oaip_danger';
     if ([4,13,14].includes(t))   return 'oaip_ctr';
@@ -1253,6 +1279,7 @@ function renderLayerToggles() {
     toggles.replaceChildren();
     pop.forEach(d => {
         const label = el('label', 'layer-toggle');
+        if (LAYER_TOOLTIP[d.key]) label.dataset.tooltip = LAYER_TOOLTIP[d.key];
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = d.key in checkedState ? checkedState[d.key] : true;
@@ -1497,6 +1524,7 @@ function renderAirports(airports) {
     header.appendChild(info);
     if (fc) {
         const fcEl = el('span', `flight-cat-pill ${fc}`, fc);
+        if (_FC_TOOLTIP[fc]) fcEl.dataset.tooltip = _FC_TOOLTIP[fc];
         header.appendChild(fcEl);
     }
     primaryWrap.appendChild(header);
@@ -1505,6 +1533,7 @@ function renderAirports(airports) {
     grid.className = 'metar-grid';
     const mg = (label, value, sub = '') => {
         const item = el('div', 'mg-item');
+        if (METAR_TOOLTIPS[label]) item.dataset.tooltip = METAR_TOOLTIPS[label];
         item.appendChild(el('div', 'mg-label', label));
         item.appendChild(el('div', 'mg-value', value));
         if (sub) item.appendChild(el('div', 'mg-sub', sub));
@@ -1551,7 +1580,11 @@ function renderAirports(airports) {
             const wind = ap.wind_speed_kt != null ? `${ap.wind_dir || ''} ${ap.wind_speed_kt}kt`.trim() : '';
             if (wind) rowMeta.appendChild(el('span', 'airport-row-wind', wind));
             const f = safeFC(ap.flight_cat);
-            if (f) rowMeta.appendChild(el('span', `flight-cat-sm ${f}`, f));
+            if (f) {
+                const smEl = el('span', `flight-cat-sm ${f}`, f);
+                if (_FC_TOOLTIP[f]) smEl.dataset.tooltip = _FC_TOOLTIP[f];
+                rowMeta.appendChild(smEl);
+            }
             row.appendChild(rowMeta);
 
             secondary.appendChild(row);

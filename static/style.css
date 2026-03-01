@@ -250,7 +250,7 @@ body {
     display: flex; align-items: center; gap: 6px;
     padding: 8px 10px; background: rgba(255,255,255,0.03);
     border: 1px solid var(--border); border-radius: 8px;
-    font-size: 0.77rem; color: var(--muted);
+    font-size: 0.77rem; color: var(--muted); position: relative;
 }
 .chip i  { color: var(--dim); font-size: 0.9rem; width: 16px; text-align: center; flex-shrink: 0; }
 .chip b  { color: var(--text); font-weight: 600; }
@@ -400,7 +400,7 @@ body {
     display: grid; grid-template-columns: repeat(auto-fill,minmax(130px,1fr));
     gap: 7px; margin-bottom: 12px;
 }
-.mg-item   { padding: 10px 12px; background: var(--card2); border-radius: var(--rs); }
+.mg-item   { padding: 10px 12px; background: var(--card2); border-radius: var(--rs); position: relative; }
 .mg-label  { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--dim); margin-bottom: 3px; }
 .mg-value  { font-size: 0.95rem; font-weight: 600; }
 .mg-sub    { font-size: 0.7rem; color: var(--muted); margin-top: 1px; }
@@ -486,7 +486,7 @@ body {
 /* ── Maps ────────────────────────────────────────────────────────── */
 .card-map            { padding-bottom: 0; }
 .card-map .card-header { padding-bottom: 12px; }
-.map-container       { height: 280px; border-radius: 0; overflow: hidden; }
+.map-container       { height: 280px; border-radius: 0; overflow: hidden; position: relative; z-index: 0; }
 .map-container-lg    { height: 420px; }
 .leaflet-container   { background: #e8e0d8; font-family: var(--font); }
 .leaflet-popup-content-wrapper { background: #1a2540; color: #e4e9f1; border: 1px solid #243356; border-radius: var(--rs); box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
@@ -521,13 +521,14 @@ body {
 .layer-toggles {
     display: flex; flex-wrap: wrap; gap: 5px;
     padding: 10px 14px 8px; border-top: 1px solid var(--border);
+    position: relative; z-index: 1;
 }
 .layer-toggles.hidden { display: none; }
 .layer-toggle {
     display: flex; align-items: center; gap: 5px; padding: 5px 12px 5px 10px;
     background: var(--card2); border: 1px solid var(--border); border-radius: 20px;
     cursor: pointer; font-size: 0.75rem; color: var(--muted); user-select: none;
-    transition: border-color 0.15s, color 0.15s;
+    transition: border-color 0.15s, color 0.15s; position: relative;
 }
 .layer-toggle:hover { border-color: var(--border-hi); color: var(--text); }
 .layer-toggle input[type="checkbox"] { width: 12px; height: 12px; accent-color: var(--blue); cursor: pointer; flex-shrink: 0; }
@@ -588,9 +589,39 @@ body {
     display: flex; flex-direction: column; align-items: center;
     background: var(--card2); border: 1px solid var(--border);
     border-radius: var(--rs); padding: 7px 12px; min-width: 72px;
+    position: relative;
 }
 .dl-label { font-size: 0.7rem; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
 .dl-val   { font-size: 0.82rem; font-weight: 600; color: var(--text); margin-top: 2px; font-family: var(--mono); }
+
+/* ── Tooltips (data-tooltip) ─────────────────────────────────────── */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card);
+    border: 1px solid var(--border-hi);
+    color: var(--text);
+    font-size: 0.72rem;
+    font-family: var(--font);
+    font-weight: 400;
+    padding: 6px 10px;
+    border-radius: 7px;
+    width: max-content;
+    max-width: 220px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 200;
+}
+[data-tooltip]:hover::after { opacity: 1; }
 
 .dl-val a.dl-link { color: var(--text); text-decoration: none; }
 .dl-val a.dl-link:hover { color: var(--blue); text-decoration: underline; }
