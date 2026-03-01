@@ -1397,10 +1397,23 @@ def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return _EARTH_NM * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def _blitzortung_thread():
+def _blitzortung_thread():  # noqa: C901
     """Daemon thread: subscribe to Blitzortung WebSocket and buffer strikes."""
     global _blitzortung_connected
-    import websocket  # imported lazily to keep startup fast if ws is unavailable
+    try:
+        import websocket as _websocket_mod  # websocket-client package
+
+        if not hasattr(_websocket_mod, "WebSocketApp"):
+            logger.warning(
+                "websocket-client is not installed (found a different 'websocket' module). "
+                "Run: pip install websocket-client  Lightning strikes disabled."
+            )
+            return
+    except ImportError:
+        logger.warning("websocket-client not installed. Lightning strikes disabled.")
+        return
+
+    import websocket  # noqa: PLC0415  re-import under canonical name for readability
 
     url_idx = 0
     while True:
@@ -1443,7 +1456,7 @@ def _blitzortung_thread():
                 on_error=on_error,
             )
             ws.run_forever(ping_interval=30, ping_timeout=10)
-        except OSError as exc:
+        except (OSError, AttributeError) as exc:
             logger.warning("Blitzortung thread exception: %s", exc)
             _blitzortung_connected = False
 
