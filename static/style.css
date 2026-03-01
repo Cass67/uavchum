@@ -508,7 +508,8 @@ body {
 .popup-class.D     { background: rgba(59,130,246,0.2); color: var(--blue); }
 .popup-class.uasfm { background: rgba(52,211,153,0.2); color: var(--green); }
 .popup-class.tfr   { background: rgba(248,113,113,0.2); color: var(--red); }
-.popup-class.airport { background: rgba(6,182,212,0.15); color: var(--cyan); }
+.popup-class.airport    { background: rgba(6,182,212,0.15);  color: var(--cyan); }
+.popup-class.lightning  { background: rgba(251,191,36,0.2);  color: var(--amber); }
 .popup-class.oaip  { border-radius: 4px; }
 .popup-class.oaip[data-color] { background: var(--oaip-bg); color: var(--oaip-color); }
 .leaflet-control-attribution { background: rgba(10,14,26,0.75) !important; color: var(--dim) !important; font-size: 0.65rem !important; }

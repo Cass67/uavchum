@@ -3,10 +3,12 @@
 
 import json
 import logging
+import math
 import os
 import secrets
 import threading
 import time
+from collections import deque
 from functools import lru_cache
 from http.cookiejar import DefaultCookiePolicy
 from re import fullmatch
@@ -1223,6 +1225,127 @@ def api_adsb():
             }
         )
     return jsonify({"aircraft": aircraft, "count": len(aircraft)})
+
+
+# ── Lightning / Blitzortung ──────────────────────────────────────────────────
+_strikes: deque = deque(maxlen=100_000)
+_strikes_lock = threading.Lock()
+_blitzortung_connected = False
+_STRIKE_MAX_AGE = 30 * 60  # seconds
+
+_BLITZORTUNG_URLS = [
+    "wss://ws1.blitzortung.org:3000/",
+    "wss://ws5.blitzortung.org:3000/",
+    "wss://ws7.blitzortung.org:3000/",
+]
+
+
+_EARTH_NM = 3440.065
+
+
+def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    return _EARTH_NM * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _blitzortung_thread():
+    """Daemon thread: subscribe to Blitzortung WebSocket and buffer strikes."""
+    global _blitzortung_connected
+    import websocket  # imported lazily to keep startup fast if ws is unavailable
+
+    url_idx = 0
+    while True:
+        url = _BLITZORTUNG_URLS[url_idx % len(_BLITZORTUNG_URLS)]
+
+        def on_message(_ws, message):
+            try:
+                d = json.loads(message)
+                lat = d.get("lat")
+                lon = d.get("lon")
+                ts_ns = d.get("time")
+                if lat is None or lon is None or ts_ns is None:
+                    return
+                with _strikes_lock:
+                    _strikes.append((float(lat), float(lon), ts_ns / 1_000_000_000))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+
+        def on_open(_ws, _url=url):
+            global _blitzortung_connected
+            _blitzortung_connected = True
+            logger.info("Blitzortung connected: %s", _url)
+
+        def on_close(_ws, _code, _msg):
+            global _blitzortung_connected
+            _blitzortung_connected = False
+            logger.warning("Blitzortung disconnected")
+
+        def on_error(_ws, error):
+            global _blitzortung_connected
+            _blitzortung_connected = False
+            logger.warning("Blitzortung error: %s", error)
+
+        try:
+            ws = websocket.WebSocketApp(
+                url,
+                on_message=on_message,
+                on_open=on_open,
+                on_close=on_close,
+                on_error=on_error,
+            )
+            ws.run_forever(ping_interval=30, ping_timeout=10)
+        except OSError as exc:
+            logger.warning("Blitzortung thread exception: %s", exc)
+            _blitzortung_connected = False
+
+        url_idx += 1
+        time.sleep(5)
+
+
+threading.Thread(target=_blitzortung_thread, daemon=True, name="blitzortung").start()
+
+
+@app.route("/api/lightning")
+@limiter.limit("60 per minute")
+def api_lightning():
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+    radius_nm = request.args.get("radius_nm", default=150, type=float)
+    if not _valid_lat(lat) or not _valid_lon(lon):
+        return jsonify({"error": "valid lat/lon required"}), 400
+    radius_nm = min(max(radius_nm, 10), 300)
+    cutoff = time.time() - _STRIKE_MAX_AGE
+    now = time.time()
+
+    with _strikes_lock:
+        snapshot = list(_strikes)
+
+    nearby = []
+    nearest_nm = None
+    for s_lat, s_lon, s_ts in snapshot:
+        if s_ts < cutoff:
+            continue
+        d = _haversine_nm(lat, lon, s_lat, s_lon)
+        if d <= radius_nm:
+            age_s = int(now - s_ts)
+            nearby.append({"lat": round(s_lat, 4), "lon": round(s_lon, 4), "age_s": age_s})
+            if nearest_nm is None or d < nearest_nm:
+                nearest_nm = round(d, 1)
+
+    nearby.sort(key=lambda x: x["age_s"])
+    return jsonify(
+        {
+            "strikes": nearby[:500],
+            "count": len(nearby),
+            "nearest_nm": nearest_nm,
+            "connected": _blitzortung_connected,
+        }
+    )
 
 
 if __name__ == "__main__":
