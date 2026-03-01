@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """UAVChum — Weather & Aviation Intelligence. Zero API keys."""
 
+import datetime
 import json
 import logging
 import math
@@ -330,6 +331,62 @@ def meters_to_ft(m):
     return round(m * 3.28084)
 
 
+def _civil_twilight_utc(lat: float, lon: float, date_str: str) -> tuple[str | None, str | None]:
+    """Return (civil_dawn_utc_iso, civil_dusk_utc_iso) for the given date.
+
+    Uses the NOAA/Spencer solar position algorithm.  Returns (None, None) for
+    polar regions where civil twilight does not occur.
+    """
+    date = datetime.date.fromisoformat(date_str[:10])
+    doy = date.timetuple().tm_yday
+    _b = 2 * math.pi * (doy - 1) / 365
+    # Solar declination — Spencer 1971
+    dec = math.degrees(
+        0.006918
+        - 0.399912 * math.cos(_b)
+        + 0.070257 * math.sin(_b)
+        - 0.006758 * math.cos(2 * _b)
+        + 0.000907 * math.sin(2 * _b)
+        - 0.002697 * math.cos(3 * _b)
+        + 0.001480 * math.sin(3 * _b)
+    )
+    # Equation of time (minutes)
+    eot = 229.18 * (
+        0.000075
+        + 0.001868 * math.cos(_b)
+        - 0.032077 * math.sin(_b)
+        - 0.014615 * math.cos(2 * _b)
+        - 0.040890 * math.sin(2 * _b)
+    )
+    solar_noon_utc = 12.0 - lon / 15.0 - eot / 60.0
+    lat_r = math.radians(lat)
+    dec_r = math.radians(dec)
+    # Zenith angle for civil twilight = 96° (sun 6° below horizon)
+    cos_ha = (math.cos(math.radians(96)) - math.sin(lat_r) * math.sin(dec_r)) / (
+        math.cos(lat_r) * math.cos(dec_r)
+    )
+    if abs(cos_ha) > 1:
+        return None, None
+    ha_h = math.degrees(math.acos(cos_ha)) / 15.0
+
+    def _to_iso(utc_h: float) -> str:
+        utc_h = utc_h % 24
+        h, rem = divmod(utc_h, 1)
+        m, srem = divmod(rem * 60, 1)
+        s = int(srem * 60)
+        return datetime.datetime(
+            date.year,
+            date.month,
+            date.day,
+            int(h),
+            int(m),
+            s,
+            tzinfo=datetime.UTC,
+        ).isoformat()
+
+    return _to_iso(solar_noon_utc - ha_h), _to_iso(solar_noon_utc + ha_h)
+
+
 # ── METAR Decoder ───────────────────────────────────────────────────
 def decode_metar(m):
     """Parse aviationweather.gov METAR JSON into human-readable fields."""
@@ -432,6 +489,68 @@ def _gust_factor(wg_kmh, wg):
     )
 
 
+def _gust_ratio_factor(ws_kn: float, wg_kn: float) -> dict | None:
+    """Return a gust-variability factor when the gust/wind ratio is high."""
+    if ws_kn < 3:
+        return None
+    ratio = wg_kn / ws_kn
+    if ratio < 2.0:
+        return None
+    ratio_str = f"{ratio:.1f}× ratio"
+    if ratio >= 3.0:
+        return _factor(
+            "Gust Variability",
+            ratio_str,
+            "danger",
+            "Extreme gust variability — sudden speed spikes, do not fly",
+        )
+    return _factor(
+        "Gust Variability",
+        ratio_str,
+        "caution",
+        "High gust variability — expect sudden, unpredictable speed changes",
+    )
+
+
+def _wind_shear_factor(ws_10m_kn: float, ws_80m_kn: float) -> dict | None:
+    """Return a low-level wind shear factor when 80 m wind differs significantly from 10 m."""
+    diff_kn = ws_80m_kn - ws_10m_kn
+    diff_kmh = diff_kn * 1.852
+    if diff_kn < 10:
+        return None
+    ws_80m_kmh = round(ws_80m_kn * 1.852)
+    note_severe = (
+        f"Severe LLWS (+{round(diff_kmh)} km/h above 10 m) — altitude changes will be violent"
+    )
+    note_caution = (
+        f"Low-level wind shear (+{round(diff_kmh)} km/h above 10 m) — turbulence on ascent/descent"
+    )
+    if diff_kn >= 20:
+        return _factor("Wind Shear", f"{ws_80m_kmh} km/h at 80 m", "danger", note_severe)
+    return _factor("Wind Shear", f"{ws_80m_kmh} km/h at 80 m", "caution", note_caution)
+
+
+def _density_alt_factor(temp_c: float, pressure_hpa: float, elev_m: float) -> dict:
+    pa_ft = (1013.25 - pressure_hpa) * 27 + elev_m * 3.28084
+    isa_c = 15 - (elev_m / 1000 * 6.5)
+    da_ft = pa_ft + 120 * (temp_c - isa_c)
+    val = f"{round(da_ft):,} ft"
+    if da_ft < 3000:
+        return _factor(
+            "Density Altitude", val, "good", "Normal air density — full thrust available"
+        )
+    if da_ft < 6000:
+        return _factor(
+            "Density Altitude", val, "caution", "Reduced air density — drone may underperform"
+        )
+    return _factor(
+        "Density Altitude",
+        val,
+        "danger",
+        "Very high density altitude — significant thrust loss expected",
+    )
+
+
 def _precip_factor(precip, group):
     if precip == 0 and group not in ("rain", "snow", "storm"):
         return _factor("Precipitation", "None", "good", "Dry conditions")
@@ -491,11 +610,27 @@ def assess_drone(weather_data):  # noqa: C901
     wg = c.get("wind_gusts") or 0
     factors.append(_gust_factor(wg * 1.852, wg))
 
+    ratio_f = _gust_ratio_factor(ws, wg)
+    if ratio_f:
+        factors.append(ratio_f)
+
+    ws_80m = c.get("wind_80m")
+    if ws_80m is not None:
+        shear_f = _wind_shear_factor(ws, ws_80m)
+        if shear_f:
+            factors.append(shear_f)
+
     precip = c.get("precip") or 0
     group = c.get("group", "clear")
     factors.append(_precip_factor(precip, group))
     factors.append(_cloud_factor(c.get("cloud_cover") or 0))
-    factors.append(_temp_factor(c.get("temp") or 0))
+    temp = c.get("temp") or 0
+    factors.append(_temp_factor(temp))
+
+    elev_m = weather_data.get("elevation")
+    if elev_m is not None:
+        pressure = c.get("pressure") or 1013.25
+        factors.append(_density_alt_factor(temp, pressure, elev_m))
 
     if group == "storm":
         factors.append(
@@ -695,9 +830,11 @@ def api_weather():
     for i in range(len(d.get("time", []))):
         try:
             dw = decode_wmo(d["weather_code"][i])
+            date_str = d["time"][i]
+            civil_dawn, civil_dusk = _civil_twilight_utc(lat, lon, date_str)
             forecast.append(
                 {
-                    "date": d["time"][i],
+                    "date": date_str,
                     "high": d["temperature_2m_max"][i],
                     "low": d["temperature_2m_min"][i],
                     "desc": dw["desc"],
@@ -710,10 +847,15 @@ def api_weather():
                     "sunrise": d["sunrise"][i],
                     "sunset": d["sunset"][i],
                     "uv": d.get("uv_index_max", [None] * 7)[i],
+                    "civil_dawn": civil_dawn,
+                    "civil_dusk": civil_dusk,
                 }
             )
         except (KeyError, IndexError):
             continue
+
+    # wind_80m is hourly-only; use first slot as a current proxy
+    wind_80m_current = hourly[0]["wind_80m"] if hourly else None
 
     result = {
         "current": {
@@ -730,11 +872,13 @@ def api_weather():
             "cloud_cover": c.get("cloud_cover"),
             "is_day": c.get("is_day", 1),
             "weather_code": c.get("weather_code", 0),
+            "wind_80m": wind_80m_current,
             **wmo,
         },
         "hourly": hourly,
         "forecast": forecast,
         "timezone": data.get("timezone", ""),
+        "elevation": data.get("elevation"),
     }
 
     result["drone"] = assess_drone(result)

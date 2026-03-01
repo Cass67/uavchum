@@ -52,6 +52,25 @@ function assessDrone(wx, cls) {
     else
         factors.push({ name:'Gusts', value:`${Math.round(wg_kmh)} km/h (${Math.round(c.wind_gusts||0)} kn)`, status:'danger', note:'Severe gusts — do not fly' });
 
+    // Gust ratio — catches calm-wind-but-spiky conditions
+    const gustRatio = ws_kmh > 5 ? wg_kmh / ws_kmh : 0;
+    if (gustRatio >= 3.0)
+        factors.push({ name:'Gust Variability', value:`${gustRatio.toFixed(1)}× ratio`, status:'danger',  note:'Extreme gust variability — sudden speed spikes, do not fly' });
+    else if (gustRatio >= 2.0)
+        factors.push({ name:'Gust Variability', value:`${gustRatio.toFixed(1)}× ratio`, status:'caution', note:'High gust variability — expect sudden, unpredictable speed changes' });
+
+    // Low-level wind shear (80 m vs 10 m)
+    const wind80m = wx.hourly?.[0]?.wind_80m;
+    if (wind80m != null) {
+        const diff_kn  = wind80m - (c.wind_speed || 0);
+        const diff_kmh = diff_kn * 1.852;
+        const w80_kmh  = Math.round(wind80m * 1.852);
+        if (diff_kn >= 20)
+            factors.push({ name:'Wind Shear', value:`${w80_kmh} km/h at 80 m`, status:'danger',  note:`Severe low-level wind shear (+${Math.round(diff_kmh)} km/h above 10 m) — altitude changes will be violent` });
+        else if (diff_kn >= 10)
+            factors.push({ name:'Wind Shear', value:`${w80_kmh} km/h at 80 m`, status:'caution', note:`Low-level wind shear (+${Math.round(diff_kmh)} km/h above 10 m) — expect turbulence on ascent/descent` });
+    }
+
     const precip = c.precip || 0, group = c.group || 'clear';
     if (precip === 0 && !['rain','snow','storm'].includes(group))
         factors.push({ name:'Precipitation', value:'None', status:'good', note:'Dry conditions' });
@@ -84,18 +103,19 @@ function assessDrone(wx, cls) {
         factors.push({ name:'Fog Risk', value:'Possible', status:'caution',
             note:'Clear sky + high humidity + calm winds at night → radiation fog likely by morning' });
 
-    // Density altitude
-    if (currentElevation != null) {
-        const elev_m = currentElevation;
-        const pa_ft  = (1013.25 - (c.pressure || 1013.25)) * 27 + (elev_m * 3.28084);
-        const isa    = 15 - (elev_m / 1000 * 6.5);
-        const da_ft  = pa_ft + 120 * ((c.temp || 15) - isa);
+    // Density altitude — use search elevation or Open-Meteo site elevation
+    const elev_m = currentElevation ?? wx.elevation ?? null;
+    if (elev_m != null) {
+        const pa_ft = (1013.25 - (c.pressure || 1013.25)) * 27 + (elev_m * 3.28084);
+        const isa   = 15 - (elev_m / 1000 * 6.5);
+        const da_ft = pa_ft + 120 * ((c.temp || 15) - isa);
+        const daVal = `${Math.round(da_ft).toLocaleString()} ft`;
         if (da_ft < 3000)
-            factors.push({ name:'Density Altitude', value:`${Math.round(da_ft)} ft`, status:'good',    note:'Normal air density' });
+            factors.push({ name:'Density Altitude', value:daVal, status:'good',    note:'Normal air density — full thrust available' });
         else if (da_ft < 6000)
-            factors.push({ name:'Density Altitude', value:`${Math.round(da_ft)} ft`, status:'caution', note:'Reduced thrust — drone may underperform' });
+            factors.push({ name:'Density Altitude', value:daVal, status:'caution', note:'Reduced air density — drone may underperform' });
         else
-            factors.push({ name:'Density Altitude', value:`${Math.round(da_ft)} ft`, status:'danger',  note:'Very high DA — significant thrust loss expected' });
+            factors.push({ name:'Density Altitude', value:daVal, status:'danger',  note:'Very high density altitude — significant thrust loss expected' });
     }
 
     // Hourly verdicts
@@ -627,6 +647,11 @@ function renderDaylight(forecast, timezone) {
     $('#sunsetVal').textContent     = fmt(today.sunset);
     $('#goldenMornVal').textContent = `${fmt(goldenMornStart.toISOString())}–${fmt(goldenMornEnd.toISOString())}`;
     $('#goldenEveVal').textContent  = `${fmt(goldenEveStart.toISOString())}–${fmt(goldenEveEnd.toISOString())}`;
+
+    const civilDawnEl = $('#civilDawnVal');
+    const civilDuskEl = $('#civilDuskVal');
+    if (civilDawnEl) civilDawnEl.textContent = today.civil_dawn ? fmt(today.civil_dawn) : '—';
+    if (civilDuskEl) civilDuskEl.textContent = today.civil_dusk ? fmt(today.civil_dusk) : '—';
 
     updateDroneLawsLink(currentCountry, currentCountryName);
 
