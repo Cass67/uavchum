@@ -107,6 +107,43 @@ if anything changed. The `.env` file on the server is never overwritten.
 
 ---
 
+## Troubleshooting
+
+### Podman stale lock errors after reboot / SSH logout
+
+Running `podman ps` may print errors like:
+
+```
+ERRO[0000] Refreshing container <id>: acquiring lock 1 for container <id>: file exists
+ERRO[0000] Refreshing pod <id>: retrieving lock 0 for pod <id>: file exists
+```
+
+**Why this happens.** Podman is daemonless — every `podman` command starts fresh and re-syncs
+container state from scratch (the "refresh" step). Per-container lock files live in `/run/user/$UID/`
+(a tmpfs). The persistent database lives on disk. On reboot or SSH logout, systemd-logind destroys
+`/run/user/$UID/` for rootless users with no active session, wiping the lock files. On the next
+command, Podman finds lock slot IDs in its database but the backing files are gone → `file exists`
+from the inconsistent lock manager state. The containers themselves are unaffected; this is a
+known upstream bug ([#16784](https://github.com/containers/podman/issues/16784)).
+
+**Permanent fix — enable linger for the deploy user** (run once on the Rocky host):
+
+```bash
+loginctl enable-linger $USER
+```
+
+This keeps `/run/user/$UID/` alive indefinitely, even with no active SSH session, so lock files
+survive across logouts and reboots.
+
+**Immediate recovery** (clears stale state on a running system):
+
+```bash
+podman system renumber
+podman compose down && podman compose up -d
+```
+
+---
+
 ## Project Structure
 
 ```

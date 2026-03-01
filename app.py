@@ -112,10 +112,12 @@ def set_security_headers(response):
         "style-src-attr 'unsafe-inline'; "
         "font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
         "img-src 'self' data: https://*.tile.openstreetmap.org "
-        "https://*.basemaps.cartocdn.com; "
+        "https://*.basemaps.cartocdn.com "
+        "https://tilecache.rainviewer.com; "
         "connect-src 'self' https://nominatim.openstreetmap.org "
         "https://fonts.googleapis.com https://*.basemaps.cartocdn.com "
-        "https://cdnjs.cloudflare.com https://unpkg.com"
+        "https://cdnjs.cloudflare.com https://unpkg.com "
+        "https://api.rainviewer.com"
     )
     if request.is_secure:
         csp += "; upgrade-insecure-requests"
