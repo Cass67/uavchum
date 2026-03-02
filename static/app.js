@@ -145,25 +145,30 @@ function assessDrone(wx, cls) {
 function assessDayFlyability(f, cls) {
     const thr = DRONE_THRESHOLDS[cls] || DRONE_THRESHOLDS.consumer;
     let dangers = 0, cautions = 0;
+    const reasons = [];
 
     const ws_kmh = (f.wind_max || 0) * 1.852;
     const wg_kmh = (f.gusts_max || 0) * 1.852;
 
-    if (ws_kmh > thr.windDanger)        dangers++;
-    else if (ws_kmh > thr.windCaution)  cautions++;
+    if (ws_kmh > thr.windDanger)        { dangers++;  reasons.push(`Wind ${Math.round(ws_kmh)} km/h — too strong`); }
+    else if (ws_kmh > thr.windCaution)  { cautions++; reasons.push(`Wind ${Math.round(ws_kmh)} km/h — moderate`); }
 
-    if (wg_kmh > thr.gustDanger)        dangers++;
-    else if (wg_kmh > thr.gustCaution)  cautions++;
+    if (wg_kmh > thr.gustDanger)        { dangers++;  reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — severe`); }
+    else if (wg_kmh > thr.gustCaution)  { cautions++; reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — gusty`); }
 
     const group = (f.group || '').toLowerCase();
-    if (['storm', 'fog'].some(g => group.includes(g)))       dangers++;
-    else if (['rain', 'snow', 'drizzle'].some(g => group.includes(g))) cautions++;
+    if (['storm', 'fog'].some(g => group.includes(g)))       { dangers++;  reasons.push(`${f.group} — hazardous`); }
+    else if (['rain', 'snow', 'drizzle'].some(g => group.includes(g))) { cautions++; reasons.push(`${f.group} — precipitation risk`); }
 
-    if ((f.precip_prob || 0) > 60) cautions++;
+    if ((f.precip_prob || 0) > 60) { cautions++; reasons.push(`${f.precip_prob}% precip chance`); }
 
-    if (dangers > 0)       return { verdict: 'NO-GO',    cls: 'no-go'    };
-    if (cautions >= 1)     return { verdict: 'MARGINAL', cls: 'marginal' };
-    return                        { verdict: 'GO',        cls: 'go'       };
+    let verdict, cls2;
+    if (dangers > 0)   { verdict = 'NO-GO';    cls2 = 'no-go';    }
+    else if (cautions) { verdict = 'MARGINAL'; cls2 = 'marginal'; }
+    else               { verdict = 'GO';       cls2 = 'go';       }
+
+    const tip = reasons.length ? reasons.join(' · ') : 'Conditions look good';
+    return { verdict, cls: cls2, tip };
 }
 
 let currentLat = null, currentLon = null, currentCountry = '', currentCountryName = '';
@@ -549,6 +554,7 @@ function renderForecast(fc) {
         const pill = document.createElement('div');
         pill.className = `fly-pill ${flyAssess.cls}`;
         pill.textContent = flyAssess.verdict;
+        pill.dataset.tooltip = flyAssess.tip;
         row.appendChild(pill);
         list.appendChild(row);
     });
