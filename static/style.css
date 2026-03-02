@@ -307,7 +307,7 @@ body {
 /* ── Forecast ────────────────────────────────────────────────────── */
 .forecast-list { display: flex; flex-direction: column; gap: 2px; }
 .forecast-row {
-    display: grid; grid-template-columns: 72px 26px 1fr 64px 52px;
+    display: grid; grid-template-columns: 72px 26px 1fr 64px 52px 62px;
     align-items: center; gap: 10px;
     padding: 9px 10px; border-radius: 8px; transition: background 0.2s;
 }
@@ -323,6 +323,15 @@ body {
 .temp-fill { transform-origin: left center; transform: scaleX(var(--temp-w, 1)); left: var(--temp-left, 0%); }
 .f-precip { font-size: 0.7rem; color: var(--cyan); text-align: right; }
 .f-meta   { font-size: 0.7rem; color: var(--dim); text-align: right; }
+
+.fly-pill {
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+    padding: 2px 7px; border-radius: 10px; text-align: center;
+    border: 1px solid transparent; white-space: nowrap;
+}
+.fly-pill.go       { background: rgba(52,211,153,0.15); color: var(--green); border-color: rgba(52,211,153,0.35); }
+.fly-pill.marginal { background: rgba(251,191,36,0.15);  color: var(--amber); border-color: rgba(251,191,36,0.35); }
+.fly-pill.no-go    { background: rgba(248,113,113,0.15); color: var(--red);   border-color: rgba(248,113,113,0.35); }
 
 /* ── Airports ────────────────────────────────────────────────────── */
 .airport-primary { display: block; }
@@ -783,7 +792,7 @@ body {
 @media (max-width: 850px) {
     .main-grid { grid-template-columns: 1fr; }
     .hero-chips { grid-template-columns: 1fr 1fr; }
-    .forecast-row { grid-template-columns: 66px 22px 1fr 48px; }
+    .forecast-row { grid-template-columns: 66px 22px 1fr 48px 56px; }
     .f-meta { display: none; }
     .station-row { flex-wrap: wrap; }
     .daylight-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
