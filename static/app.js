@@ -2408,6 +2408,101 @@ function renderSources(sources) {
     });
 })();
 
+
+/* ── Preflight Briefing ────────────────────────────────────────── */
+function generateBriefingHTML() {
+    if (!currentWxData) return null;
+    const wx   = currentWxData;
+    const c    = wx.current;
+    const dr   = assessDrone(wx, droneClass);
+    const name = $('#locationName').textContent || 'Unknown Location';
+    const now  = new Date().toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' });
+    const drcls = droneClass.charAt(0).toUpperCase() + droneClass.slice(1);
+
+    const verdictColor = dr.verdict === 'GO' ? '#16a34a' : dr.verdict === 'NO-GO' ? '#dc2626' : '#b45309';
+
+    // Drone factors rows
+    const factorRows = dr.factors.map(f => {
+        const col = f.status === 'danger' ? '#dc2626' : f.status === 'caution' ? '#b45309' : '#16a34a';
+        return `<tr>
+            <td style="padding:4px 8px;font-weight:600;color:${col}">${f.name}</td>
+            <td style="padding:4px 8px">${f.value}</td>
+            <td style="padding:4px 8px;color:#555">${f.note}</td>
+        </tr>`;
+    }).join('');
+
+    // 7-day forecast rows
+    const forecastRows = (wx.forecast || []).map(f => {
+        const dt  = new Date(f.date + 'T12:00:00');
+        const day = dt.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+        const fly = assessDayFlyability(f, droneClass);
+        const fc  = fly.cls === 'go' ? '#16a34a' : fly.cls === 'no-go' ? '#dc2626' : '#b45309';
+        return `<tr>
+            <td style="padding:4px 8px;font-weight:600">${day}</td>
+            <td style="padding:4px 8px">${f.desc}</td>
+            <td style="padding:4px 8px">${Math.round(f.low)}° / ${Math.round(f.high)}°</td>
+            <td style="padding:4px 8px">${toWind(f.wind_max)} ${windUnit()}</td>
+            <td style="padding:4px 8px">${f.precip_prob > 0 ? f.precip_prob + '%' : '—'}</td>
+            <td style="padding:4px 8px;font-weight:700;color:${fc}">${fly.verdict}</td>
+        </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UAVChum Preflight Briefing — ${name}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; font-size: 13px; color: #111; background: #fff; padding: 24px 32px; }
+  h1 { font-size: 1.3rem; margin-bottom: 2px; }
+  .meta { color: #555; font-size: 0.78rem; margin-bottom: 20px; }
+  .verdict-banner { display: inline-block; padding: 6px 18px; border-radius: 20px; font-size: 1rem; font-weight: 700; color: #fff; background: ${verdictColor}; margin-bottom: 20px; }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin: 18px 0 8px; }
+  .conditions-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+  .cond { background: #f5f5f5; border-radius: 6px; padding: 8px 12px; }
+  .cond-label { font-size: 0.7rem; color: #777; text-transform: uppercase; letter-spacing: 0.05em; }
+  .cond-val { font-size: 1rem; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { text-align: left; padding: 4px 8px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #777; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) { background: #fafafa; }
+  .footer { margin-top: 24px; font-size: 0.7rem; color: #aaa; border-top: 1px solid #eee; padding-top: 8px; }
+  @media print { body { padding: 12px 18px; } }
+</style>
+</head>
+<body>
+<h1>UAVChum Preflight Briefing</h1>
+<div class="meta">${name} &nbsp;·&nbsp; Generated ${now} &nbsp;·&nbsp; Drone class: ${drcls}</div>
+<div class="verdict-banner">${dr.verdict} — ${dr.summary}</div>
+
+  <h2>Current Conditions</h2>
+  <div class="conditions-grid">
+    <div class="cond"><div class="cond-label">Weather</div><div class="cond-val">${c.desc}</div></div>
+    <div class="cond"><div class="cond-label">Temperature</div><div class="cond-val">${toTemp(c.temp)}${tempUnit()}</div></div>
+    <div class="cond"><div class="cond-label">Wind</div><div class="cond-val">${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}</div></div>
+    <div class="cond"><div class="cond-label">Gusts</div><div class="cond-val">${toWind(c.wind_gusts)} ${windUnit()}</div></div>
+    <div class="cond"><div class="cond-label">Humidity</div><div class="cond-val">${c.humidity}%</div></div>
+    <div class="cond"><div class="cond-label">Pressure</div><div class="cond-val">${Math.round(c.pressure)} hPa</div></div>
+    <div class="cond"><div class="cond-label">Cloud Cover</div><div class="cond-val">${c.cloud_cover ?? '—'}%</div></div>
+    <div class="cond"><div class="cond-label">Feels Like</div><div class="cond-val">${toTemp(c.feels_like)}${tempUnit()}</div></div>
+  </div>
+
+  <h2>Drone Assessment Factors</h2>
+  <table>
+    <thead><tr><th>Factor</th><th>Value</th><th>Note</th></tr></thead>
+    <tbody>${factorRows}</tbody>
+  </table>
+
+  <h2>7-Day Outlook</h2>
+  <table>
+    <thead><tr><th>Day</th><th>Conditions</th><th>Temp</th><th>Max Wind</th><th>Precip</th><th>Verdict</th></tr></thead>
+    <tbody>${forecastRows}</tbody>
+  </table>
+
+  <div class="footer">UAVChum &nbsp;·&nbsp; uavchum.hehaw.net &nbsp;·&nbsp; All times local to ${wx.timezone || 'location'}</div>
+</body>
+</html>`;
+}
 /* ── Share & Print ─────────────────────────────────────────────── */
 (function setupSharePrint() {
     $('#shareBtn')?.addEventListener('click', async () => {
@@ -2439,7 +2534,15 @@ function renderSources(sources) {
             }
         } catch (e) {}
     });
-    $('#printBtn')?.addEventListener('click', () => window.print());
+    $('#printBtn')?.addEventListener('click', () => {
+        const html = generateBriefingHTML();
+        if (!html) return;
+        const w = window.open('', '_blank');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+    });
 })();
 
 (function setupServiceWorker() {
