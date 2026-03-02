@@ -372,7 +372,57 @@ body {
 .alert-head { font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 .alert-head.sigmet { color: var(--red); }
 .alert-head.airmet { color: var(--amber); }
-.alert-body { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+.alert-info  { display: flex; flex-direction: column; gap: 2px; margin: 5px 0 6px; }
+.alert-field { font-size: 0.8rem; color: var(--text); }
+.alert-body  { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); white-space: pre-wrap; word-break: break-word; line-height: 1.6; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px; }
+
+/* METAR history rows */
+.metar-hist-list { display: flex; flex-direction: column; margin-top: 6px; }
+.metar-hist-row  { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); gap: 8px; }
+.metar-hist-row:last-child { border-bottom: none; }
+.metar-hist-left  { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.metar-hist-time  { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+.metar-hist-right { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.metar-hist-item  { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.metar-hist-wx    { color: var(--cyan); }
+.flight-cat-pill.fc-sm { padding: 1px 5px; font-size: 0.65rem; letter-spacing: 0.5px; margin-left: 0; }
+
+/* NOTAM decoded */
+.notam-id     { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+.notam-source { font-size: 0.68rem; color: var(--dim); margin-left: auto; }
+.notam-timing { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); margin-bottom: 4px; }
+.notam-desc   { font-size: 0.82rem; color: var(--text); line-height: 1.5; }
+
+/* TAF decoded */
+.taf-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.taf-valid { font-size: 0.72rem; color: var(--muted); padding: 0 2px 4px; }
+.taf-period { padding: 9px 12px; background: var(--card2); border-left: 3px solid var(--blue); border-radius: 0 var(--rs) var(--rs) 0; }
+.taf-period.tempo { border-color: var(--amber); }
+.taf-period.becmg { border-color: var(--green); }
+.taf-period.prob  { border-color: var(--muted); opacity: 0.85; }
+.taf-period-head { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--blue); margin-bottom: 5px; }
+.taf-period.tempo .taf-period-head { color: var(--amber); }
+.taf-period.becmg .taf-period-head { color: var(--green); }
+.taf-period.prob  .taf-period-head { color: var(--muted); }
+.taf-field { font-size: 0.8rem; color: var(--text); line-height: 1.6; }
+.taf-wx    { color: var(--cyan); }
+
+/* PIREP decoded */
+.pirep-card { padding: 9px 12px; background: var(--card2); border-left: 3px solid var(--purple); border-radius: 0 var(--rs) var(--rs) 0; margin-bottom: 6px; }
+.pirep-hdr  { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pirep-aircraft { font-weight: 700; font-size: 0.82rem; color: var(--text); }
+.pirep-actype   { font-size: 0.72rem; color: var(--muted); padding: 1px 5px; background: var(--border); border-radius: 4px; }
+.pirep-alt  { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+.pirep-time { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
+.pirep-type-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; background: rgba(167,139,250,0.12); color: var(--purple); margin-left: auto; }
+.pirep-field { display: flex; gap: 8px; align-items: baseline; line-height: 1.7; }
+.pirep-field-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); min-width: 72px; flex-shrink: 0; }
+.pirep-field-value { font-size: 0.82rem; color: var(--text); }
+.pirep-neg  { color: var(--green); }
+.pirep-lgt  { color: var(--amber); opacity: 0.75; }
+.pirep-mod  { color: var(--amber); }
+.pirep-sev  { color: var(--red); font-weight: 600; }
+.pirep-remark { color: var(--muted); font-style: italic; }
 
 /* NOTAM items */
 .notam-item { padding: 12px 14px; background: var(--card2); border: 1px solid var(--border); border-radius: var(--rs); margin-bottom: 6px; transition: border-color 0.2s; }

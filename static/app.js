@@ -794,30 +794,33 @@ function renderAviation(d) {
             return row;
         };
         if (m.temp_c != null) grid.appendChild(item('Temperature', `${m.temp_c}°C`, `${m.temp_f}°F`));
-        if (m.dewp_c != null) grid.appendChild(item('Dew Point', `${m.dewp_c}°C`, `${m.dewp_f}°F`));
-        if (m.wind_speed_kt != null) {
-            const gust = m.wind_gust_kt ? `Gusts ${m.wind_gust_kt} kt` : null;
-            grid.appendChild(item('Wind', `${m.wind_dir || ''} ${m.wind_speed_kt} kt`, gust));
+        if (m.dewp_c != null) {
+            const spread = m.temp_c != null ? m.temp_c - m.dewp_c : null;
+            const dewSub = (spread != null && spread <= 3)
+                ? `⚠ Fog/mist risk (spread ${spread}°C)`
+                : `${m.dewp_f}°F`;
+            grid.appendChild(item('Dew Point', `${m.dewp_c}°C`, dewSub));
         }
-        grid.appendChild(item('Visibility', m.visibility || 'N/A'));
+        if (m.wind_speed_kt != null) {
+            grid.appendChild(item('Wind', fmtWind(m.wind_dir, m.wind_dir_deg, m.wind_speed_kt, m.wind_gust_kt)));
+        }
+        grid.appendChild(item('Visibility', fmtVis(m.visibility) || 'N/A'));
         if (m.altimeter_hpa != null) {
             grid.appendChild(item('Altimeter', `${m.altimeter_inhg} inHg`, `${m.altimeter_hpa} hPa`));
         }
         if (m.clouds?.length) {
-            const cloudTxt = m.clouds
-                .map(c => `${c.cover}${c.base ? ' ' + c.base + ' ft' : ''}${c.type ? ' ' + c.type : ''}`)
-                .join(', ');
+            const cloudTxt = m.clouds.map(c => decodeCloud(c.cover, c.base, c.type)).join(', ');
             grid.appendChild(item('Clouds', cloudTxt));
         }
-        if (m.wx_string) grid.appendChild(item('Weather', m.wx_string));
+        if (m.wx_string) grid.appendChild(item('Weather', decodeWx(m.wx_string)));
         $('#metarRaw').textContent = m.raw;
         const history = $('#metarHistory');
         history.replaceChildren();
         if (d.metar.length > 1) {
             history.appendChild(el('div', 'label-small', `Previous Reports (${d.metar.length - 1})`));
-            d.metar.slice(1).forEach(x => {
-                history.appendChild(el('div', 'raw-block raw-block-compact', x.rawOb || ''));
-            });
+            const histList = el('div', 'metar-hist-list');
+            d.metar.slice(1).forEach(x => histList.appendChild(renderMetarHistoryRow(x)));
+            history.appendChild(histList);
         }
         const colBtn = $('#metarCollapseBtn');
         if (colBtn && !colBtn._wired) {
@@ -838,28 +841,20 @@ function renderAviation(d) {
     }
 
     if (d.taf?.length) {
-        const taf = $('#tafContent');
-        taf.replaceChildren();
-        d.taf.forEach(t => {
-            taf.appendChild(el('div', 'raw-block cyan', t.rawTAF || JSON.stringify(t)));
-        });
+        const tafEl = $('#tafContent');
+        tafEl.replaceChildren();
+        d.taf.forEach(t => tafEl.appendChild(renderTAFDecoded(t)));
     } else {
-        const taf = $('#tafContent');
-        taf.replaceChildren();
-        taf.appendChild(el('div', 'no-data', `No TAF for ${d.station}`));
+        const tafEl = $('#tafContent');
+        tafEl.replaceChildren();
+        tafEl.appendChild(el('div', 'no-data', `No TAF for ${d.station}`));
     }
 
     if (d.airsigmet?.length) {
         $('#alertCount').textContent = `${d.airsigmet.length} active`;
         const alertContent = $('#alertContent');
         alertContent.replaceChildren();
-        d.airsigmet.forEach(a => {
-            const isSig = (a.airSigmetType || '').toUpperCase().includes('SIGMET');
-            const item = el('div', `alert-item ${isSig ? 'sigmet' : ''}`);
-            item.appendChild(el('div', `alert-head ${isSig ? 'sigmet' : 'airmet'}`, `${a.airSigmetType || 'ALERT'} — ${a.hazard || ''}`));
-            item.appendChild(el('div', 'alert-body', a.rawAirSigmet || ''));
-            alertContent.appendChild(item);
-        });
+        d.airsigmet.forEach(a => alertContent.appendChild(renderAlertDecoded(a)));
     } else {
         $('#alertCount').textContent = 'None';
         const alertContent = $('#alertContent');
@@ -871,9 +866,7 @@ function renderAviation(d) {
         $('#pirepCount').textContent = `${d.pireps.length}`;
         const pirepContent = $('#pirepContent');
         pirepContent.replaceChildren();
-        d.pireps.forEach(p => {
-            pirepContent.appendChild(el('div', 'raw-block raw-block-compact', p.rawOb || JSON.stringify(p)));
-        });
+        d.pireps.forEach(p => pirepContent.appendChild(renderPIREPDecoded(p)));
     } else {
         $('#pirepCount').textContent = '0';
         const pirepContent = $('#pirepContent');
@@ -885,17 +878,7 @@ function renderAviation(d) {
         const src = d.notam_source ? ` (${d.notam_source})` : '';
         $('#notamCount').textContent = `${d.notams.length}${src}`;
         const SHOW = 3;
-        const items = d.notams.map(n => {
-            const text = n.raw || n.all || n.message || JSON.stringify(n);
-            const item = el('div', 'notam-item');
-            if (n.source) {
-                const head = el('div', 'notam-head');
-                head.appendChild(el('span', 'notam-cat', n.source));
-                item.appendChild(head);
-            }
-            item.appendChild(el('div', 'notam-text', text));
-            return item;
-        });
+        const items = d.notams.map(n => renderNOTAMDecoded(n));
         const notamContent = $('#notamContent');
         notamContent.replaceChildren();
         const visibleItems = items.slice(0, SHOW);
@@ -987,6 +970,676 @@ const LAYER_DEFS  = [
     { key:'radar',       label:'Radar',                  color:'#22d3ee' },
     { key:'lightning',   label:'Lightning Strikes',      color:'#fbbf24' },
 ];
+/* ── Weather decoding helpers ──────────────────────────────────── */
+const WX_PHRASES = {
+    'TSRA': 'Thunderstorm + Rain',   '+TSRA': 'Heavy Thunderstorm + Rain',
+    'TSGR': 'Thunderstorm + Hail',   'TSPL': 'Thunderstorm + Ice Pellets',
+    'TSSN': 'Thunderstorm + Snow',   'TSFZRA': 'Thunderstorm + Freezing Rain',
+    'FZRA': 'Freezing Rain',         '+FZRA': 'Heavy Freezing Rain',   '-FZRA': 'Light Freezing Rain',
+    'FZDZ': 'Freezing Drizzle',      '-FZDZ': 'Light Freezing Drizzle',
+    'FZFG': 'Freezing Fog',          'BLSN': 'Blowing Snow',           'DRSN': 'Drifting Snow',
+    'BLDU': 'Blowing Dust',          'BLSA': 'Blowing Sand',
+    'SHRA': 'Rain Shower',           '-SHRA': 'Light Rain Shower',     '+SHRA': 'Heavy Rain Shower',
+    'SHSN': 'Snow Shower',           '-SHSN': 'Light Snow Shower',
+    'SHGR': 'Hail Shower',           'SHGS': 'Graupel Shower',
+    'RASN': 'Rain/Snow',             '-RASN': 'Light Rain/Snow',       '+RASN': 'Heavy Rain/Snow',
+    'SNRA': 'Snow/Rain',             '-SNRA': 'Light Snow/Rain',
+    'BCFG': 'Patchy Fog',            'MIFG': 'Shallow Fog',            'PRFG': 'Partial Fog',
+    'VCFG': 'Fog in Vicinity',       'VCSH': 'Showers in Vicinity',    'VCTS': 'Thunderstorm in Vicinity',
+    '+RA': 'Heavy Rain',             'RA': 'Rain',                     '-RA': 'Light Rain',
+    '+SN': 'Heavy Snow',             'SN': 'Snow',                     '-SN': 'Light Snow',
+    '+DZ': 'Heavy Drizzle',          'DZ': 'Drizzle',                  '-DZ': 'Light Drizzle',
+    '+GR': 'Heavy Hail',             'GR': 'Hail',
+    'GS': 'Graupel',                 '-GS': 'Light Graupel',
+    '+PL': 'Heavy Ice Pellets',      'PL': 'Ice Pellets',              '-PL': 'Light Ice Pellets',
+    'IC': 'Ice Crystals',            'SG': 'Snow Grains',              '-SG': 'Light Snow Grains',
+    'FG': 'Fog',    'BR': 'Mist',    'HZ': 'Haze',   'FU': 'Smoke',
+    'DU': 'Dust',   'SA': 'Sand',    'VA': 'Volcanic Ash',   'PY': 'Spray',
+    'TS': 'Thunderstorm',   'SQ': 'Squall',   'FC': 'Funnel Cloud',   '+FC': 'Tornado/Waterspout',
+    'SS': 'Sandstorm',      '+SS': 'Heavy Sandstorm',   'DS': 'Dust Storm',
+    'CAVOK': 'Clear & Vis ≥10 km',  'NSW': 'No significant weather',
+};
+function decodeWx(wxStr) {
+    if (!wxStr) return wxStr;
+    if (wxStr === 'CAVOK') return 'Clear & Vis ≥10 km';
+    if (wxStr === 'NSW')   return 'No significant weather';
+    return wxStr.split(/\s+/).map(w => WX_PHRASES[w] || w).join(', ');
+}
+
+const SKY_COVER = {
+    'SKC': 'Clear sky',   'CLR': 'Clear sky',    'NSC': 'No significant cloud',
+    'NCD': 'No cloud detected',   'CAVOK': 'Clear & Vis ≥10 km',
+    'FEW': 'Few clouds',  'SCT': 'Scattered',    'BKN': 'Broken',   'OVC': 'Overcast',
+    'VV': 'Vertical visibility',
+};
+function decodeCloud(cover, base, type) {
+    const text = SKY_COVER[cover] || cover;
+    if (base == null && ['SKC','CLR','NSC','NCD','CAVOK'].includes(cover)) return text;
+    const parts = [text];
+    if (base != null) parts.push(`at ${Number(base).toLocaleString()} ft`);
+    if (type === 'CB')  parts.push('(Cumulonimbus \u26a0)');
+    else if (type === 'TCU') parts.push('(Towering Cu)');
+    return parts.join(' ');
+}
+
+const TURB_INT  = { 'NEG':'None','SMOOTH':'None','SMTH':'None','NIL':'None','LGT':'Light','LGTMOD':'Light–Mod','MOD':'Moderate','MODSEV':'Mod–Severe','SEV':'Severe','EXTRM':'Extreme','LGT-MOD':'Light–Mod','MOD-SEV':'Mod–Severe' };
+const TURB_TYPE = { 'CAT':'Clear-air','CHOP':'Chop','LLWS':'Windshear','MWAVE':'Mt. Wave' };
+const TURB_FREQ = { 'ISOL':'Isolated','OCNL':'Occasional','FQT':'Frequent','CONT':'Continuous','INTMT':'Intermittent' };
+const ICG_INT   = { 'NEG':'None','TRACE':'Trace','LGT':'Light','LGTMOD':'Light–Mod','MOD':'Moderate','MODSEV':'Mod–Severe','SEV':'Severe','LGT-MOD':'Light–Mod','MOD-SEV':'Mod–Severe' };
+const ICG_TYPE  = { 'RIME':'Rime','MIXED':'Mixed','CLEAR':'Clear','CLR':'Clear' };
+const CHANGE_IND = { 'FM':'From','TEMPO':'Temporarily','BECMG':'Becoming','PROB30':'30% chance','PROB40':'40% chance' };
+
+function decodeTB(tb) {
+    if (!tb) return null;
+    const tokens = tb.split(/\s+/);
+    const parts = [];
+    for (const t of tokens) {
+        if (TURB_INT[t])  { parts.push(TURB_INT[t]); continue; }
+        if (TURB_TYPE[t]) { parts.push(TURB_TYPE[t]); continue; }
+        if (TURB_FREQ[t]) { parts.push(TURB_FREQ[t]); continue; }
+        if (/^\d{3}-\d{3}$/.test(t)) {
+            const [lo, hi] = t.split('-').map(x => Number(x) * 100);
+            parts.push(`${lo.toLocaleString()}–${hi.toLocaleString()} ft`); continue;
+        }
+        if (/^\d{3}$/.test(t)) { parts.push(`above ${Number(t) * 100} ft`); continue; }
+        parts.push(t);
+    }
+    return parts.join(', ') || tb;
+}
+function decodeIC(ic) {
+    if (!ic) return null;
+    const tokens = ic.split(/\s+/);
+    const parts = [];
+    for (const t of tokens) {
+        if (ICG_INT[t])  { parts.push(ICG_INT[t]); continue; }
+        if (ICG_TYPE[t]) { parts.push(ICG_TYPE[t]); continue; }
+        if (/^\d{3}-\d{3}$/.test(t)) {
+            const [lo, hi] = t.split('-').map(x => Number(x) * 100);
+            parts.push(`${lo.toLocaleString()}–${hi.toLocaleString()} ft`); continue;
+        }
+        parts.push(t);
+    }
+    return parts.join(' ') || ic;
+}
+function turbSevClass(tb) {
+    const u = (tb || '').toUpperCase();
+    if (u.includes('EXTRM') || (u.includes('SEV') && !u.includes('MOD'))) return 'pirep-sev';
+    if (u.includes('MOD')) return 'pirep-mod';
+    if (u.includes('LGT')) return 'pirep-lgt';
+    return '';
+}
+function degreesToCompass(deg) {
+    if (deg == null || isNaN(deg)) return '';
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    return dirs[Math.round(Number(deg) / 22.5) % 16];
+}
+
+function fmtUTCShort(ts) {
+    if (!ts && ts !== 0) return '';
+    // obsTime comes as Unix epoch seconds (10-digit number); ISO strings also accepted
+    const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const h = String(d.getUTCHours()).padStart(2, '0');
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}/${h}:${m}Z`;
+}
+// Parse US FAA PIREP format:  UA /OV ORD090040/TM 1430/FL350/TP B737/TB MOD CHOP/IC TRACE RIME
+function parsePIREPFields(raw) {
+    if (!raw) return {};
+    const fields = {};
+    raw.split('/').forEach(seg => {
+        const m = seg.match(/^\s*([A-Z]{2})\s+([\s\S]+)/);
+        if (m) fields[m[1]] = m[2].trim();
+    });
+    return fields;
+}
+
+// Parse ICAO ARP/AIREP format:  ARP BAW7CP 5516N00550W 1708 F360 GOMUP 1730 6000N02000W MS52 221/62 KT GVIIJ ...
+// Also handles split lat/lon:  ARP UAL914 5236N 00053W 1127 F340 195/032 TB CONT SMTH IC
+const _ICAO_STOP = new Set(['TB','IC','RM','SK','WX','TA','WV']);
+function decodeLatLon(s) {
+    const m = s.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/);
+    if (!m) return null;
+    return `${m[1]}°${m[2]}′${m[3]}  ${m[4]}°${m[5]}′${m[6]}`;
+}
+function decodeLatLonSplit(lat, lon) {
+    const ml = lat.match(/^(\d{2})(\d{2})([NS])$/);
+    const mo = lon.match(/^(\d{3})(\d{2})([EW])$/);
+    if (!ml || !mo) return null;
+    return `${ml[1]}°${ml[2]}′${ml[3]}  ${mo[1]}°${mo[2]}′${mo[3]}`;
+}
+function parseICAOARP(raw) {
+    if (!raw) return null;
+    const tokens = raw.trim().split(/\s+/);
+    if (!['ARP','UAR','AIREP'].includes(tokens[0])) return null;
+    const r = {};
+    let i = 1;
+    // callsign
+    if (tokens[i] && /^[A-Z0-9]{3,8}$/.test(tokens[i]) && !_ICAO_STOP.has(tokens[i])) r.callsign = tokens[i++];
+    // position: joined 5516N00550W or split 5236N 00053W
+    if (tokens[i] && /^\d{4}[NS]\d{5}[EW]$/.test(tokens[i])) {
+        r.position = decodeLatLon(tokens[i++]);
+    } else if (tokens[i] && /^\d{4}[NS]$/.test(tokens[i]) && tokens[i+1] && /^\d{5}[EW]$/.test(tokens[i+1])) {
+        r.position = decodeLatLonSplit(tokens[i], tokens[i+1]); i += 2;
+    }
+    // time HHMM
+    if (tokens[i] && /^\d{4}$/.test(tokens[i])) { r.time = `${tokens[i].slice(0,2)}:${tokens[i].slice(2)}Z`; i++; }
+    // level F360 or M120
+    if (tokens[i] && /^[FM]\d{3}$/.test(tokens[i])) {
+        const fl = parseInt(tokens[i].slice(1));
+        r.level = `FL${fl} (${(fl * 100).toLocaleString()} ft)`; i++;
+    }
+    // next fix (short word, not a stop marker or number)
+    if (tokens[i] && /^[A-Z]{2,5}$/.test(tokens[i]) && !_ICAO_STOP.has(tokens[i]) && !/^\d/.test(tokens[i])) r.nextFix = tokens[i++];
+    // ETA HHMM
+    if (tokens[i] && /^\d{4}$/.test(tokens[i])) { r.nextETA = `${tokens[i].slice(0,2)}:${tokens[i].slice(2)}Z`; i++; }
+    // next significant position (skip — routing only)
+    if (tokens[i] && /^\d{4}[NS]\d{5}[EW]$/.test(tokens[i])) i++;
+    // temperature MS52 / PS10
+    if (tokens[i] && /^[MP][SP]?\d{2}$/.test(tokens[i])) {
+        const t = tokens[i];
+        r.temp = `${t[0] === 'M' ? '−' : '+'}${parseInt(t.replace(/^[A-Z]+/, ''))}°C`; i++;
+    }
+    // wind DDD/FF (optional KT/KTS)
+    if (tokens[i] && /^\d{3}\/\d{2,3}$/.test(tokens[i])) {
+        const [dir, spd] = tokens[i++].split('/');
+        if (/^KTS?$/.test(tokens[i])) i++;
+        r.wind = `${dir}° at ${spd} kt`;
+    }
+    // aircraft type (not a stop marker)
+    if (tokens[i] && /^[A-Z][A-Z0-9]{1,5}$/.test(tokens[i]) && !_ICAO_STOP.has(tokens[i])) r.aircraft = tokens[i++];
+    // scan for TB and IC inline section markers
+    while (i < tokens.length) {
+        if (tokens[i] === 'TB') {
+            i++;
+            const toks = [];
+            while (i < tokens.length && !_ICAO_STOP.has(tokens[i]) && toks.length < 6) toks.push(tokens[i++]);
+            r.turb = toks.join(' ');
+        } else if (tokens[i] === 'IC') {
+            i++;
+            const toks = [];
+            while (i < tokens.length && !_ICAO_STOP.has(tokens[i]) && toks.length < 4) toks.push(tokens[i++]);
+            r.ice = toks.join(' ');
+        } else { i++; }
+    }
+    return r;
+}
+
+function renderTAFDecoded(taf) {
+    const card = el('div', 'taf-card');
+    if (taf.validTimeFrom && taf.validTimeTo) {
+        let hdrText = `Valid ${fmtUTCShort(taf.validTimeFrom)} \u2013 ${fmtUTCShort(taf.validTimeTo)}`;
+        if (taf.issueTime) {
+            const issueEpoch = new Date(taf.issueTime).getTime() / 1000;
+            hdrText += `  \u00b7  Issued ${fmtUTCShort(issueEpoch)}`;
+        }
+        card.appendChild(el('div', 'taf-valid', hdrText));
+    }
+    const forecasts = taf.fcsts || [];
+    if (!forecasts.length) {
+        card.appendChild(el('div', 'raw-block cyan', taf.rawTAF || JSON.stringify(taf)));
+        return card;
+    }
+    forecasts.forEach(f => {
+        const ci   = (f.fcstChange || '').toUpperCase();
+        const prob = f.probability;
+
+        let extra = '';
+        if (ci === 'TEMPO') extra = ' tempo';
+        else if (ci === 'BECMG') extra = ' becmg';
+        else if (ci === 'PROB') extra = ' prob';
+        const period = el('div', `taf-period${extra}`);
+
+        // Label
+        let label;
+        if      (ci === 'PROB' && prob) label = `${prob}% Chance`;
+        else if (ci === 'TEMPO' && prob) label = `${prob}% Chance \u2013 Temporary`;
+        else if (ci === 'TEMPO') label = 'Temporary';
+        else if (ci === 'BECMG') label = 'Becoming';
+        else if (ci === 'FM')   label = 'From';
+        else                    label = 'Base Forecast';
+
+        // Time string
+        const from = fmtUTCShort(f.timeFrom);
+        const to   = fmtUTCShort(f.timeTo);
+        const bec  = f.timeBec ? fmtUTCShort(f.timeBec) : null;
+        let timeStr;
+        if (!ci || ci === 'FM') timeStr = from;
+        else if (bec && ci === 'BECMG') timeStr = `${from} \u2013 ${to}  (complete by ${bec})`;
+        else timeStr = `${from} \u2013 ${to}`;
+
+        period.appendChild(el('div', 'taf-period-head', `${label}  \u00b7  ${timeStr}`));
+        const body = el('div', 'taf-period-body');
+
+        // Wind — wdir is degrees (number) or "VRB"
+        if (f.wspd != null) {
+            let windText;
+            if (f.wdir === 'VRB' || f.wdir === 0) {
+                windText = `Variable at ${f.wspd} kt`;
+            } else {
+                windText = `${f.wdir}\u00b0 (${degreesToCompass(f.wdir)}) at ${f.wspd} kt`;
+            }
+            if (f.wgst) windText += `, gusts ${f.wgst} kt`;
+            body.appendChild(el('div', 'taf-field', `Wind: ${windText}`));
+        }
+
+        // Wind shear
+        if (f.wshearHgt != null) {
+            const shearDir = f.wshearDir != null ? `${f.wshearDir}\u00b0 (${degreesToCompass(f.wshearDir)})` : '\u2014';
+            const shearSpd = f.wshearSpd != null ? `${f.wshearSpd} kt` : '\u2014';
+            body.appendChild(el('div', 'taf-field taf-wx', `Wind Shear: ${shearDir} / ${shearSpd} at ${(f.wshearHgt * 100).toLocaleString()} ft`));
+        }
+
+        // Visibility
+        const vis = fmtVis(f.visib);
+        if (vis && vis !== 'N/A') body.appendChild(el('div', 'taf-field', `Vis: ${vis}`));
+
+        // Vertical visibility
+        if (f.vertVis != null) {
+            body.appendChild(el('div', 'taf-field', `Vertical Vis: ${(f.vertVis * 100).toLocaleString()} ft`));
+        }
+
+        // Weather
+        if (f.wxString) {
+            body.appendChild(el('div', 'taf-field taf-wx', `Weather: ${decodeWx(f.wxString)}`));
+        }
+
+        // Sky
+        if (f.clouds?.length) {
+            const clearCovers = new Set(['SKC', 'CLR', 'CAVOK', 'NSC', 'NCD']);
+            const layerStr = f.clouds
+                .filter(c => c.cover && !clearCovers.has(c.cover))
+                .map(c => decodeCloud(c.cover, c.base, c.type))
+                .join(', ');
+            if (layerStr) body.appendChild(el('div', 'taf-field', `Sky: ${layerStr}`));
+            else if (f.clouds.some(c => clearCovers.has(c.cover))) {
+                body.appendChild(el('div', 'taf-field', 'Sky: Clear'));
+            }
+        }
+
+        if (body.childElementCount) period.appendChild(body);
+        card.appendChild(period);
+    });
+    return card;
+}
+
+function renderPIREPDecoded(pirep) {
+    const card = el('div', 'pirep-card');
+    const rawOb = pirep.rawOb || '';
+    const isICAO = /^(ARP|UAR|AIREP)\b/.test(rawOb.trim());
+    const f   = isICAO ? {} : parsePIREPFields(rawOb);
+    const arp = isICAO ? parseICAOARP(rawOb) : null;
+
+    // ── Header (acType = callsign for AIREPs, aircraft type for PIREPs) ──
+    const acType  = pirep.acType && pirep.acType !== 'UNKN' ? pirep.acType : (f.TP || arp?.callsign || null);
+    const lvlType = pirep.fltLvlType || '';
+    const fltLvl  = pirep.fltLvl;
+    const flLabel = lvlType === 'DURC' ? 'Climbing'
+        : lvlType === 'DURD' ? 'Descending'
+        : (fltLvl != null && fltLvl > 0) ? `FL${fltLvl} (${(fltLvl * 100).toLocaleString()} ft)`
+        : (arp?.level || (f.FL && f.FL !== 'UNKN' ? `FL${parseInt(f.FL)} (${parseInt(f.FL)*100} ft)` : null));
+    const timeStr = pirep.obsTime ? fmtUTCShort(pirep.obsTime) : (f.TM ? `${f.TM}Z` : arp?.time || null);
+    const badge   = pirep.pirepType || (isICAO ? 'AIREP' : 'PIREP');
+
+    const hdr = el('div', 'pirep-hdr');
+    if (acType) hdr.appendChild(el('span', 'pirep-aircraft', acType));
+    // For ICAO, if the JSON also has a separate acType (aircraft type code), show it as a badge
+    if (arp?.aircraft && arp.aircraft !== acType) hdr.appendChild(el('span', 'pirep-actype', arp.aircraft));
+    if (flLabel) hdr.appendChild(el('span', 'pirep-alt', flLabel));
+    if (timeStr) hdr.appendChild(el('span', 'pirep-time', timeStr));
+    hdr.appendChild(el('span', 'pirep-type-badge', badge));
+    card.appendChild(hdr);
+
+    let fieldCount = 0;
+    const addField = (label, value, cls = '') => {
+        if (!value && value !== 0) return;
+        fieldCount++;
+        const row = el('div', 'pirep-field');
+        row.appendChild(el('span', 'pirep-field-label', label));
+        row.appendChild(el('span', `pirep-field-value${cls ? ' ' + cls : ''}`, value));
+        card.appendChild(row);
+    };
+
+    // ── Position (ICAO only) ────────────────────────────────────────
+    if (arp?.position) addField('Position', arp.position);
+
+    // ── Temperature — JSON field first ─────────────────────────────
+    const tempVal = pirep.temp != null
+        ? `${pirep.temp > 0 ? '+' : ''}${pirep.temp}°C`
+        : (arp?.temp || null);
+    addField('Temp', tempVal);
+
+    // ── Wind — JSON fields first ────────────────────────────────────
+    const windVal = (pirep.wdir != null && pirep.wspd != null)
+        ? `${pirep.wdir}° at ${pirep.wspd} kt`
+        : (arp?.wind || null);
+    addField('Wind', windVal);
+
+    // ── Turbulence — JSON flat fields tbInt1/tbType1/tbFreq1 ───────
+    // API returns flat fields (not arrays): tbInt1, tbType1, tbFreq1, tbBas1, tbTop1
+    //                                       tbInt2, tbType2, tbFreq2, tbBas2, tbTop2
+    const buildTBLayer = (int, type, freq, bas, top) => {
+        if (!int) return null;
+        const parts = [];
+        const intLabel = TURB_INT[int];
+        if (intLabel && intLabel !== 'None') parts.push(intLabel); else if (!intLabel) parts.push(int);
+        if (type) parts.push(TURB_TYPE[type] || type);
+        if (freq) parts.push(TURB_FREQ[freq] || freq);
+        if (bas > 0 && top > 0) parts.push(`FL${bas}–FL${top}`);
+        else if (bas > 0) parts.push(`above FL${bas}`);
+        return { label: parts.join(', ') || null, isNeg: intLabel === 'None' };
+    };
+    const tb1 = buildTBLayer(pirep.tbInt1, pirep.tbType1, pirep.tbFreq1, pirep.tbBas1, pirep.tbTop1);
+    const tb2 = buildTBLayer(pirep.tbInt2, pirep.tbType2, pirep.tbFreq2, pirep.tbBas2, pirep.tbTop2);
+    const hasTBJSON = tb1 || tb2;
+    if (hasTBJSON) {
+        const allNeg = (!pirep.tbInt1 || TURB_INT[pirep.tbInt1] === 'None')
+                    && (!pirep.tbInt2 || TURB_INT[pirep.tbInt2] === 'None');
+        if (allNeg) {
+            addField('Turbulence', 'None', 'pirep-neg');
+        } else {
+            const layers = [tb1?.label, tb2?.label].filter(Boolean).join(' / ');
+            addField('Turbulence', layers || 'Reported', turbSevClass(pirep.tbInt1 || pirep.tbInt2));
+        }
+    } else {
+        // Fallback: US /TB field or ICAO inline TB section
+        const tbRaw = f.TB || arp?.turb || null;
+        if (tbRaw !== null) {
+            if (!tbRaw || /^(NEG|SMTH|SMOOTH|NIL)/i.test(tbRaw)) addField('Turbulence', 'None', 'pirep-neg');
+            else { const d = decodeTB(tbRaw); addField('Turbulence', d || tbRaw, turbSevClass(tbRaw)); }
+        } else if (isICAO && /\bTB\b/.test(rawOb)) {
+            addField('Turbulence', 'None', 'pirep-neg');
+        }
+    }
+
+    // ── Icing — JSON flat fields icgInt1/icgType1 ──────────────────
+    const buildICLayer = (int, type, bas, top) => {
+        if (!int) return null;
+        const parts = [];
+        const intLabel = ICG_INT[int];
+        if (intLabel && intLabel !== 'None') parts.push(intLabel); else if (!intLabel) parts.push(int);
+        if (type) parts.push(ICG_TYPE[type] || type);
+        if (bas > 0 && top > 0) parts.push(`FL${bas}–FL${top}`);
+        else if (bas > 0) parts.push(`above FL${bas}`);
+        return { label: parts.join(' ') || null, isNeg: intLabel === 'None' };
+    };
+    const ic1 = buildICLayer(pirep.icgInt1, pirep.icgType1, pirep.icgBas1, pirep.icgTop1);
+    const ic2 = buildICLayer(pirep.icgInt2, pirep.icgType2, pirep.icgBas2, pirep.icgTop2);
+    const hasICJSON = ic1 || ic2;
+    if (hasICJSON) {
+        const allNeg = (!pirep.icgInt1 || ICG_INT[pirep.icgInt1] === 'None')
+                    && (!pirep.icgInt2 || ICG_INT[pirep.icgInt2] === 'None');
+        if (allNeg) {
+            addField('Icing', 'None', 'pirep-neg');
+        } else {
+            const layers = [ic1?.label, ic2?.label].filter(Boolean).join(' / ');
+            addField('Icing', layers || 'Reported');
+        }
+    } else {
+        const icRaw = f.IC || (arp?.ice !== undefined ? arp.ice : null);
+        if (icRaw !== null) {
+            if (!icRaw || /^(NEG)/i.test(icRaw)) addField('Icing', 'None', 'pirep-neg');
+            else { const d = decodeIC(icRaw); addField('Icing', d || icRaw); }
+        } else if (isICAO && /\bIC\b/.test(rawOb)) {
+            addField('Icing', 'None', 'pirep-neg');
+        }
+    }
+
+    // ── Sky conditions — JSON clouds array ─────────────────────────
+    // API returns clouds as [{cover, base, top}] or null
+    const cloudsArr = Array.isArray(pirep.clouds) ? pirep.clouds : null;
+    const skyStr = cloudsArr?.filter(c => c.cover && c.cover !== 'UNKN')
+        .map(c => decodeCloud(c.cover, c.base, null)).join(', ')
+        || f.SK || null;
+    if (skyStr && !['UNKNOWN','UNKN','//'].includes(skyStr.toUpperCase())) addField('Sky', skyStr);
+
+    // ── Visibility ─────────────────────────────────────────────────
+    if (pirep.visib != null && pirep.visib !== '') addField('Vis', `${pirep.visib} SM`);
+
+    // ── Weather string ─────────────────────────────────────────────
+    const wx = pirep.wxString || f.WX || null;
+    if (wx && !['','UNKN','//'].includes(wx.toUpperCase())) addField('Weather', decodeWx(wx));
+
+    // ── Next fix (ICAO only) ────────────────────────────────────────
+    if (arp?.nextFix) addField('Next fix', arp.nextETA ? `${arp.nextFix} at ${arp.nextETA}` : arp.nextFix);
+
+    // ── Remarks ────────────────────────────────────────────────────
+    const rm = f.RM;
+    if (rm && !['UNKNOWN','UNKN'].includes(rm.toUpperCase())) addField('Remarks', rm, 'pirep-remark');
+
+    // ── Fallback: raw only if truly nothing decoded ─────────────────
+    if (fieldCount === 0) card.appendChild(el('div', 'raw-block raw-block-compact', rawOb));
+    return card;
+}
+
+/* ── METAR helpers ─────────────────────────────────────────────── */
+function fmtVis(vis) {
+    if (vis == null || vis === '' || vis === 'N/A') return 'N/A';
+    const s = String(vis).replace(/\sSM$/i, '').trim();
+    if (s === '6+') return '≥6 SM';
+    if (s === '0')  return '<¼ SM';
+    const n = parseFloat(s);
+    if (!isNaN(n)) {
+        if (n >= 6) return '≥6 SM';
+        if (n < 0.25) return '<¼ SM';
+        return `${+n.toFixed(1)} SM`;
+    }
+    return s.includes('SM') ? s : `${s} SM`;
+}
+function fmtWind(dir, dirDeg, spd, gust) {
+    if (spd === 0 || spd === '0') return 'Calm';
+    let str;
+    if (dir === 'VRB' || dirDeg === 'VRB') str = `Variable at ${spd} kt`;
+    else if (dirDeg != null && dirDeg !== 'VRB') str = `${dirDeg}° (${dir || ''}) at ${spd} kt`;
+    else str = `${dir || ''} ${spd} kt`.trim();
+    if (gust) str += `, gusts ${gust} kt`;
+    return str;
+}
+// Render one history METAR row from a raw API METAR object
+function renderMetarHistoryRow(m) {
+    const row = el('div', 'metar-hist-row');
+    const left = el('div', 'metar-hist-left');
+    const timeStr = m.obsTime ? fmtUTCShort(m.obsTime) : (m.reportTime ? fmtUTCShort(m.reportTime) : '');
+    if (timeStr) left.appendChild(el('span', 'metar-hist-time', timeStr));
+    if (m.fltCat) {
+        const fc = el('span', `flight-cat-pill fc-sm ${safeFC(m.fltCat)}`, m.fltCat);
+        left.appendChild(fc);
+    }
+    row.appendChild(left);
+    const right = el('div', 'metar-hist-right');
+    if (m.temp != null) right.appendChild(el('span', 'metar-hist-item', `${m.temp}°C`));
+    if (m.wspd != null) {
+        const dir = m.wdir === 'VRB' ? 'VRB' : (m.wdir != null ? `${m.wdir}°` : '');
+        const gust = m.wgst ? `/G${m.wgst}` : '';
+        right.appendChild(el('span', 'metar-hist-item', `${dir} ${m.wspd}${gust} kt`.trim()));
+    }
+    if (m.visib != null) right.appendChild(el('span', 'metar-hist-item', fmtVis(`${m.visib} SM`)));
+    if (m.wxString) right.appendChild(el('span', 'metar-hist-item metar-hist-wx', decodeWx(m.wxString)));
+    const cloudsArr = Array.isArray(m.clouds) && m.clouds.length ? m.clouds
+        : (m.cover && !['CLR','SKC','NSC','NCD'].includes(m.cover) ? [{cover: m.cover}] : null);
+    if (cloudsArr?.length) {
+        const cText = cloudsArr.filter(c => c.cover && !['CLR','SKC','NSC','NCD'].includes(c.cover))
+            .map(c => decodeCloud(c.cover, c.base, c.type)).join(', ');
+        if (cText) right.appendChild(el('span', 'metar-hist-item', cText));
+    }
+    if (!right.childElementCount) right.appendChild(el('span', 'metar-hist-item', m.rawOb || ''));
+    row.appendChild(right);
+    return row;
+}
+
+/* ── SIGMET/AIRMET helpers ─────────────────────────────────────── */
+const _STATE_NAMES = {
+    'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
+    'CO':'Colorado','CT':'Connecticut','DE':'Delaware','FL':'Florida','GA':'Georgia',
+    'HI':'Hawaii','ID':'Idaho','IL':'Illinois','IN':'Indiana','IA':'Iowa',
+    'KS':'Kansas','KY':'Kentucky','LA':'Louisiana','ME':'Maine','MD':'Maryland',
+    'MA':'Massachusetts','MI':'Michigan','MN':'Minnesota','MS':'Mississippi','MO':'Missouri',
+    'MT':'Montana','NE':'Nebraska','NV':'Nevada','NH':'New Hampshire','NJ':'New Jersey',
+    'NM':'New Mexico','NY':'New York','NC':'North Carolina','ND':'North Dakota','OH':'Ohio',
+    'OK':'Oklahoma','OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina',
+    'SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah','VT':'Vermont',
+    'VA':'Virginia','WA':'Washington','WV':'West Virginia','WI':'Wisconsin','WY':'Wyoming',
+    'CSTL':'Coastal','WTRS':'Waters','CSTL WTRS':'Coastal Waters',
+    'ATLC':'Atlantic','OCNC':'Oceanic','GULF':'Gulf',
+};
+function _expandArea(s) {
+    // Try full phrase first, then word by word
+    if (_STATE_NAMES[s]) return _STATE_NAMES[s];
+    return s.split(/\s+/).map(w => _STATE_NAMES[w] || w).join(' ');
+}
+function _parsePhenomenon(line) {
+    const parts = [];
+    const structM = line.match(/\b(LINE|AREA|ISOL|EMBD)\b/);
+    const sevM    = line.match(/\b(SEV|MOD|LGT)\b/);
+    const typeM   = line.match(/\b(TS|TURB|ICG|FZRA|VA|LLWS)\b/);
+    const widthM  = line.match(/(\d+)\s*NM\s*WIDE/i);
+    const topsM   = line.match(/TOPS\s+(TO|ABV)?\s*FL(\d+)/i);
+    const movLtlM = line.match(/MOV\s+LTL/i);
+    const movFrmM = line.match(/MOV\s+FROM\s+(\d{3})(\d{2})KT/i);
+    const movDirM = !movFrmM && line.match(/MOV\s+(N|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|NNE)\b/i);
+    const SEV = { SEV:'Severe', MOD:'Moderate', LGT:'Light' };
+    const STRUCT = { LINE:'Line of', AREA:'Area of', ISOL:'Isolated', EMBD:'Embedded' };
+    const TYPE = { TS:'thunderstorms', TURB:'turbulence', ICG:'icing', FZRA:'freezing rain', VA:'volcanic ash', LLWS:'low-level windshear' };
+    const sev = sevM ? (SEV[sevM[1]] + ' ') : '';
+    const typ = typeM ? (TYPE[typeM[1]] || typeM[1]) : '';
+    if (structM) parts.push(`${STRUCT[structM[1]]} ${sev}${typ}`.trim());
+    else if (typ) parts.push(`${sev}${typ}`.trim());
+    if (widthM) parts.push(`${widthM[1]} NM wide`);
+    if      (movLtlM) parts.push('stationary');
+    else if (movFrmM) parts.push(`moving from ${movFrmM[1]}\u00b0 (${degreesToCompass(Number(movFrmM[1]))}) at ${Number(movFrmM[2])} kt`);
+    else if (movDirM) parts.push(`moving ${movDirM[1].toUpperCase()}`);
+    if (topsM) parts.push(`tops ${(topsM[1]||'').toUpperCase()==='ABV'?'above':'to'} FL${topsM[2]}`);
+    return parts.length ? parts.join(', ') : null;
+}
+function parseAlertBody(raw) {
+    if (!raw) return {};
+    const lines = raw.replace(/\r\n/g,'\n').split('\n').map(l => l.trim()).filter(Boolean);
+    let i = 0;
+    // skip bulletin / series / type headers
+    while (i < lines.length && (
+        /^WS[A-Z0-9]+\s/.test(lines[i]) ||
+        /^SIG[A-Z]?\s*$/.test(lines[i]) ||
+        /^(CONVECTIVE\s+)?SIGMET\b/i.test(lines[i]) ||
+        /^AIRMET\b/i.test(lines[i]) ||
+        /^VALID\s+UNTIL\b/i.test(lines[i])
+    )) i++;
+    const result = {};
+    // geographic area (before FROM / OUTLOOK)
+    if (i < lines.length && !/^FROM\b/.test(lines[i]) && !/^OUTLOOK\b/.test(lines[i]) && !/^AREA\b/.test(lines[i])) {
+        result.area = _expandArea(lines[i]);
+        i++;
+    }
+    // boundary (FROM ...) — skip, VOR refs aren't human-readable
+    if (i < lines.length && /^FROM\b/.test(lines[i])) i++;
+    // phenomenon line
+    if (i < lines.length && !/^OUTLOOK\b/.test(lines[i])) {
+        result.phenomenon = _parsePhenomenon(lines[i]);
+        i++;
+    }
+    // outlook
+    const olkM = raw.match(/OUTLOOK\s+VALID\s+(\d{6})-(\d{6})/);
+    if (olkM) {
+        const fmt = s => `${s.slice(2,4)}:${s.slice(4,6)}Z`;
+        result.outlook = `${fmt(olkM[1])} \u2013 ${fmt(olkM[2])}`;
+    }
+    return result;
+}
+
+const HAZARD_LABELS = {
+    'CONVECTIVE':'Thunderstorm / Convective',  'TURB':'Turbulence',  'TURBULENCE':'Turbulence',
+    'ICE':'Icing',  'ICING':'Icing',  'IFR':'IFR Conditions',
+    'MTN OBSCN':'Mountain Obscuration',  'SFC WINDS':'Surface Winds',
+    'LLWS':'Low-Level Windshear',  'FZLVL':'Freezing Level',
+    'VOLCANIC ASH':'Volcanic Ash',  'TROPICAL CYCLONE':'Tropical Cyclone',
+    'DUST STORM':'Dust Storm',  'SANDSTORM':'Sandstorm',
+};
+function renderAlertDecoded(a) {
+    const isSig = (a.airSigmetType || '').toUpperCase().includes('SIGMET');
+    const item = el('div', `alert-item ${isSig ? 'sigmet' : ''}`);
+    const hazard = HAZARD_LABELS[a.hazard] || a.hazard || 'Unknown';
+    const typeSeries = [a.airSigmetType, a.seriesId].filter(Boolean).join(' ');
+    item.appendChild(el('div', `alert-head ${isSig ? 'sigmet' : 'airmet'}`, `${typeSeries} \u2014 ${hazard}`));
+    const info = el('div', 'alert-info');
+    if (a.validTimeFrom && a.validTimeTo)
+        info.appendChild(el('div', 'alert-field', `Valid: ${fmtUTCShort(a.validTimeFrom)} \u2013 ${fmtUTCShort(a.validTimeTo)}`));
+    const lo = (!a.altitudeLow1 && a.altitudeLow1 !== 0) || a.altitudeLow1 === 0 ? 'SFC' : `FL${Math.round(a.altitudeLow1 / 100)}`;
+    const hi = a.altitudeHi1 != null ? (a.altitudeHi1 >= 1000 ? `FL${Math.round(a.altitudeHi1 / 100)}` : `${a.altitudeHi1} ft`) : null;
+    if (hi) info.appendChild(el('div', 'alert-field', `Altitudes: ${lo} \u2013 ${hi}`));
+    // movement from structured fields, with compass direction
+    if (a.movementDir != null && a.movementSpd > 0)
+        info.appendChild(el('div', 'alert-field', `Movement: from ${a.movementDir}\u00b0 (${degreesToCompass(a.movementDir)}) at ${a.movementSpd} kt`));
+    else if (a.movementSpd === 0)
+        info.appendChild(el('div', 'alert-field', 'Movement: Stationary'));
+    // parsed body fields
+    const body = parseAlertBody(a.rawAirSigmet);
+    if (body.area) info.appendChild(el('div', 'alert-field', `Area: ${body.area}`));
+    if (body.phenomenon) info.appendChild(el('div', 'alert-field', `Description: ${body.phenomenon}`));
+    // stationary from raw text when movement fields are null
+    if (a.movementDir == null && a.movementSpd == null && body.phenomenon?.includes('stationary'))
+        info.appendChild(el('div', 'alert-field', 'Movement: Stationary'));
+    if (body.outlook) info.appendChild(el('div', 'alert-field', `Outlook: ${body.outlook} \u2014 further issuances possible`));
+    if (info.childElementCount) item.appendChild(info);
+    item.appendChild(el('div', 'alert-body', a.rawAirSigmet || ''));
+    return item;
+}
+
+/* ── NOTAM helpers ─────────────────────────────────────────────── */
+const NOTAM_SUBJECTS = {
+    'MRXX':'Runway',       'MRLC':'Runway Closed',   'MRLT':'Runway Lights',   'MRHC':'Holding Point',
+    'MXXX':'Taxiway',      'MXLC':'Taxiway Closed',  'MXLT':'Taxiway Lights',  'MXAP':'Apron',
+    'FAXX':'Aerodrome',    'FALC':'Aerodrome Closed', 'FALT':'Aerodrome Lights','FAWM':'ATC Hours',
+    'FADP':'Departure Proc','FAAP':'Arrival Proc',
+    'NBXX':'Navaid',       'NBIL':'ILS',              'NBVO':'VOR',             'NBNM':'NDB',
+    'NBDM':'DME',          'NBAS':'Radar',
+    'OBST':'Obstacle',     'OBXX':'Obstacle',
+    'SAXX':'Airspace',     'SACF':'Control Zone',     'SAZZ':'Restricted Area',
+    'LCXX':'Lighting',     'LCAT':'Approach Lights',
+    'PCXX':'Procedure',
+};
+function decodeQCode(code) {
+    if (!code) return null;
+    return NOTAM_SUBJECTS[code] || NOTAM_SUBJECTS[code.slice(0,2) + 'XX'] || null;
+}
+function fmtNotamTime(t) {
+    if (!t || t.length < 10) return t;
+    const mo = parseInt(t.slice(2,4));
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${t.slice(4,6)} ${months[mo-1] || mo} ${t.slice(6,8)}:${t.slice(8,10)}Z`;
+}
+function parseNOTAM(raw) {
+    if (!raw) return null;
+    const text = raw.replace(/^\(/, '').replace(/\)\s*$/, '');
+    const r = {};
+    const numM = text.match(/^([A-Z]\d+\/\d{2})\s+NOTAM/);
+    if (numM) r.id = numM[1];
+    const qM = text.match(/Q\)\s*\w+\/Q(\w{4})/);
+    if (qM) r.subject = decodeQCode(qM[1]);
+    const bM = text.match(/\bB\)\s*(\d{10})/);
+    const cM = text.match(/\bC\)\s*(\d{10}|PERM)/i);
+    if (bM) r.from = fmtNotamTime(bM[1]);
+    if (cM) r.to = cM[1].toUpperCase() === 'PERM' ? 'Permanent' : fmtNotamTime(cM[1]);
+    const eM = text.match(/\bE\)\s*([\s\S]+?)(?:\n[A-Z]\)|$)/);
+    if (eM) r.description = eM[1].trim().replace(/\n/g, ' ').replace(/\s*\)$/, '').trim();
+    return r;
+}
+function renderNOTAMDecoded(n) {
+    const parsed = parseNOTAM(n.raw || '');
+    const item = el('div', 'notam-item');
+    const head = el('div', 'notam-head');
+    if (parsed?.subject) head.appendChild(el('span', 'notam-cat', parsed.subject));
+    if (parsed?.id)      head.appendChild(el('span', 'notam-id',  parsed.id));
+    if (n.source)        head.appendChild(el('span', 'notam-source', n.source));
+    if (head.childElementCount) item.appendChild(head);
+    if (parsed?.from || parsed?.to) {
+        const parts = [parsed.from && `From ${parsed.from}`, parsed.to && `to ${parsed.to}`].filter(Boolean);
+        item.appendChild(el('div', 'notam-timing', parts.join(' ')));
+    }
+    if (parsed?.description) item.appendChild(el('div', 'notam-desc', parsed.description));
+    else item.appendChild(el('div', 'notam-text', n.raw || ''));
+    return item;
+}
+
 const LAYER_TOOLTIP = {
     oaip_danger: 'Restricted, Danger & Prohibited zones — drone flight typically requires authorisation',
     oaip_ctr:    'Control Zone / Aerodrome Traffic Zone — ATC permission required for drone ops',
@@ -1549,11 +2202,11 @@ function renderAirports(airports) {
     if (primary.clouds?.length) {
         const cs = primary.clouds
             .filter(c => c.cover)
-            .map(c => `${c.cover}${c.base ? ' ' + c.base + ' ft' : ''}`)
+            .map(c => decodeCloud(c.cover, c.base, c.type))
             .join(', ');
         if (cs) grid.appendChild(mg('Clouds', cs));
     }
-    if (primary.wx_string) grid.appendChild(mg('Weather', primary.wx_string));
+    if (primary.wx_string) grid.appendChild(mg('Weather', decodeWx(primary.wx_string)));
 
     if (grid.childElementCount) primaryWrap.appendChild(grid);
 
