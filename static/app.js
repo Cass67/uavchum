@@ -142,6 +142,30 @@ function assessDrone(wx, cls) {
     return { verdict, color, summary, factors, hourly: hourlyVerdicts };
 }
 
+function assessDayFlyability(f, cls) {
+    const thr = DRONE_THRESHOLDS[cls] || DRONE_THRESHOLDS.consumer;
+    let dangers = 0, cautions = 0;
+
+    const ws_kmh = (f.wind_max || 0) * 1.852;
+    const wg_kmh = (f.gusts_max || 0) * 1.852;
+
+    if (ws_kmh > thr.windDanger)        dangers++;
+    else if (ws_kmh > thr.windCaution)  cautions++;
+
+    if (wg_kmh > thr.gustDanger)        dangers++;
+    else if (wg_kmh > thr.gustCaution)  cautions++;
+
+    const group = (f.group || '').toLowerCase();
+    if (['storm', 'fog'].some(g => group.includes(g)))       dangers++;
+    else if (['rain', 'snow', 'drizzle'].some(g => group.includes(g))) cautions++;
+
+    if ((f.precip_prob || 0) > 60) cautions++;
+
+    if (dangers > 0)       return { verdict: 'NO-GO',    cls: 'no-go'    };
+    if (cautions >= 1)     return { verdict: 'MARGINAL', cls: 'marginal' };
+    return                        { verdict: 'GO',        cls: 'go'       };
+}
+
 let currentLat = null, currentLon = null, currentCountry = '', currentCountryName = '';
 let droneMap = null, droneLayerGroups = {};
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
@@ -521,6 +545,11 @@ function renderForecast(fc) {
         row.appendChild(precip);
         row.appendChild(meta);
 
+        const flyAssess = assessDayFlyability(f, droneClass);
+        const pill = document.createElement('div');
+        pill.className = `fly-pill ${flyAssess.cls}`;
+        pill.textContent = flyAssess.verdict;
+        row.appendChild(pill);
         list.appendChild(row);
     });
 }
