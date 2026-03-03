@@ -601,6 +601,14 @@ function renderChecklist() {
     ];
     const list = $('#droneChecklist');
     list.replaceChildren();
+
+    // Check All button above the list
+    const checkAllBtn = document.createElement('button');
+    checkAllBtn.type = 'button';
+    checkAllBtn.className = 'checklist-check-all';
+    checkAllBtn.textContent = 'Check All';
+    list.before(checkAllBtn);
+
     items.forEach(c => {
         const row = el('div', 'checklist-item');
         row.appendChild(el('div', 'check-box'));
@@ -615,71 +623,85 @@ function renderChecklist() {
         checklist.after(complete);
     }
 
+    const updateComplete = () => {
+        const all = checklist.querySelectorAll('.check-box');
+        const done = checklist.querySelectorAll('.check-box.checked');
+        const allChecked = all.length && all.length === done.length;
+        checkAllBtn.textContent = allChecked ? 'Uncheck All' : 'Check All';
+        if (allChecked) {
+            const now = new Date();
+            const ts  = now.toLocaleDateString('en', { weekday:'short', year:'numeric', month:'short', day:'numeric' })
+                      + ' · ' + now.toLocaleTimeString('en', { hour:'2-digit', minute:'2-digit' });
+            complete.replaceChildren();
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M22 11.08V12a10 10 0 1 1-5.93-9.14');
+            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            poly.setAttribute('points', '22 4 12 14.01 9 11.01');
+            svg.appendChild(path);
+            svg.appendChild(poly);
+
+            const wrap = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'cc-title';
+            title.textContent = 'All checks complete';
+            const tsEl = document.createElement('div');
+            tsEl.className = 'cc-ts';
+            tsEl.textContent = ts;
+            wrap.appendChild(title);
+            wrap.appendChild(tsEl);
+
+            complete.appendChild(svg);
+            complete.appendChild(wrap);
+            const printBriefBtn = document.createElement('button');
+            printBriefBtn.type = 'button';
+            printBriefBtn.className = 'cc-print-btn';
+            printBriefBtn.title = 'Print preflight briefing';
+            const psvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            psvg.setAttribute('viewBox', '0 0 24 24');
+            psvg.setAttribute('fill', 'none');
+            psvg.setAttribute('stroke', 'currentColor');
+            psvg.setAttribute('stroke-width', '2');
+            psvg.setAttribute('width', '16');
+            psvg.setAttribute('height', '16');
+            psvg.innerHTML = '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>';
+            printBriefBtn.appendChild(psvg);
+            printBriefBtn.appendChild(document.createTextNode(' Print Briefing'));
+            printBriefBtn.addEventListener('click', () => {
+                const content = generateBriefingContent(checklist);
+                if (!content) return;
+                try {
+                    localStorage.setItem('uavchum_briefing_content', content);
+                    window.open('/static/briefing.html', '_blank');
+                } catch (e) {
+                    alert('Unable to open briefing: ' + e.message);
+                }
+            });
+            complete.appendChild(printBriefBtn);
+            complete.classList.remove('hidden');
+        } else {
+            complete.classList.add('hidden');
+        }
+    };
+
     checklist.querySelectorAll('.checklist-item').forEach(item => {
         item.addEventListener('click', () => {
             item.querySelector('.check-box').classList.toggle('checked');
-            const all = checklist.querySelectorAll('.check-box');
-            const done = checklist.querySelectorAll('.check-box.checked');
-            if (all.length && all.length === done.length) {
-                const now = new Date();
-                const ts  = now.toLocaleDateString('en', { weekday:'short', year:'numeric', month:'short', day:'numeric' })
-                          + ' · ' + now.toLocaleTimeString('en', { hour:'2-digit', minute:'2-digit' });
-                complete.replaceChildren();
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.setAttribute('viewBox', '0 0 24 24');
-                svg.setAttribute('fill', 'none');
-                svg.setAttribute('stroke', 'currentColor');
-                svg.setAttribute('stroke-width', '2');
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', 'M22 11.08V12a10 10 0 1 1-5.93-9.14');
-                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-                poly.setAttribute('points', '22 4 12 14.01 9 11.01');
-                svg.appendChild(path);
-                svg.appendChild(poly);
-
-                const wrap = document.createElement('div');
-                const title = document.createElement('div');
-                title.className = 'cc-title';
-                title.textContent = 'All checks complete';
-                const tsEl = document.createElement('div');
-                tsEl.className = 'cc-ts';
-                tsEl.textContent = ts;
-                wrap.appendChild(title);
-                wrap.appendChild(tsEl);
-
-                complete.appendChild(svg);
-                complete.appendChild(wrap);
-                // Print briefing button
-                const printBriefBtn = document.createElement('button');
-                printBriefBtn.type = 'button';
-                printBriefBtn.className = 'cc-print-btn';
-                printBriefBtn.title = 'Print preflight briefing';
-                const psvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                psvg.setAttribute('viewBox', '0 0 24 24');
-                psvg.setAttribute('fill', 'none');
-                psvg.setAttribute('stroke', 'currentColor');
-                psvg.setAttribute('stroke-width', '2');
-                psvg.setAttribute('width', '16');
-                psvg.setAttribute('height', '16');
-                psvg.innerHTML = '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>';
-                printBriefBtn.appendChild(psvg);
-                printBriefBtn.appendChild(document.createTextNode(' Print Briefing'));
-                printBriefBtn.addEventListener('click', () => {
-                    const content = generateBriefingContent(checklist);
-                    if (!content) return;
-                    try {
-                        localStorage.setItem('uavchum_briefing_content', content);
-                        window.open('/static/briefing.html', '_blank');
-                    } catch (e) {
-                        alert('Unable to open briefing: ' + e.message);
-                    }
-                });
-                complete.appendChild(printBriefBtn);
-                complete.classList.remove('hidden');
-            } else {
-                complete.classList.add('hidden');
-            }
+            updateComplete();
         });
+    });
+
+    checkAllBtn.addEventListener('click', () => {
+        const allChecked = checklist.querySelectorAll('.check-box').length ===
+                           checklist.querySelectorAll('.check-box.checked').length;
+        checklist.querySelectorAll('.check-box').forEach(box => {
+            box.classList.toggle('checked', !allChecked);
+        });
+        updateComplete();
     });
 }
 
