@@ -158,6 +158,10 @@ function assessDayFlyability(f, cls) {
     if (wg_kmh > thr.gustDanger)        { dangers++;  reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — severe`); }
     else if (wg_kmh > thr.gustCaution)  { cautions++; reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — gusty`); }
 
+    const gustRatio = ws_kmh > 5 ? wg_kmh / ws_kmh : 0;
+    if (gustRatio >= 3.0)      { dangers++;  reasons.push(`Extreme gust variability (${gustRatio.toFixed(1)}×)`); }
+    else if (gustRatio >= 2.0) { cautions++; reasons.push(`High gust variability (${gustRatio.toFixed(1)}×)`); }
+
     const group = (f.group || '').toLowerCase();
     if (['storm', 'fog'].some(g => group.includes(g)))       { dangers++;  reasons.push(`${f.group} — hazardous`); }
     else if (['rain', 'snow', 'drizzle'].some(g => group.includes(g))) { cautions++; reasons.push(`${f.group} — precipitation risk`); }
