@@ -508,7 +508,7 @@ body {
     color: var(--muted); font-size: 0.75rem; font-weight: 600;
     cursor: pointer; transition: background 0.15s, color 0.15s;
 }
-.checklist-check-all:hover { background: var(--card2); color: var(--fg); }
+.checklist-check-all:hover { background: var(--card2); color: var(--text); }
 .drone-checklist { display: flex; flex-direction: column; gap: 3px; }
 .checklist-item {
     display: flex; align-items: center; gap: 10px; padding: 8px 10px;
