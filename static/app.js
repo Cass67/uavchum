@@ -1,5 +1,7 @@
 const $ = s => document.querySelector(s);
 
+const L = window.L;
+
 // ── Global state ────────────────────────────────────────────────
 let currentElevation = null;
 let currentWxData    = null;
@@ -140,6 +142,35 @@ function assessDrone(wx, cls) {
         { verdict='GO';       color='green'; summary='Conditions are good for drone flight'; }
 
     return { verdict, color, summary, factors, hourly: hourlyVerdicts };
+}
+
+function assessDayFlyability(f, cls) {
+    const thr = DRONE_THRESHOLDS[cls] || DRONE_THRESHOLDS.consumer;
+    let dangers = 0, cautions = 0;
+    const reasons = [];
+
+    const ws_kmh = (f.wind_max || 0) * 1.852;
+    const wg_kmh = (f.gusts_max || 0) * 1.852;
+
+    if (ws_kmh > thr.windDanger)        { dangers++;  reasons.push(`Wind ${Math.round(ws_kmh)} km/h — too strong`); }
+    else if (ws_kmh > thr.windCaution)  { cautions++; reasons.push(`Wind ${Math.round(ws_kmh)} km/h — moderate`); }
+
+    if (wg_kmh > thr.gustDanger)        { dangers++;  reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — severe`); }
+    else if (wg_kmh > thr.gustCaution)  { cautions++; reasons.push(`Gusts ${Math.round(wg_kmh)} km/h — gusty`); }
+
+    const group = (f.group || '').toLowerCase();
+    if (['storm', 'fog'].some(g => group.includes(g)))       { dangers++;  reasons.push(`${f.group} — hazardous`); }
+    else if (['rain', 'snow', 'drizzle'].some(g => group.includes(g))) { cautions++; reasons.push(`${f.group} — precipitation risk`); }
+
+    if ((f.precip_prob || 0) > 60) { cautions++; reasons.push(`${f.precip_prob}% precip chance`); }
+
+    let verdict, cls2;
+    if (dangers > 0)   { verdict = 'NO-GO';    cls2 = 'no-go';    }
+    else if (cautions) { verdict = 'MARGINAL'; cls2 = 'marginal'; }
+    else               { verdict = 'GO';       cls2 = 'go';       }
+
+    const tip = reasons.length ? reasons.join(' · ') : 'Conditions look good';
+    return { verdict, cls: cls2, tip };
 }
 
 let currentLat = null, currentLon = null, currentCountry = '', currentCountryName = '';
@@ -521,6 +552,12 @@ function renderForecast(fc) {
         row.appendChild(precip);
         row.appendChild(meta);
 
+        const flyAssess = assessDayFlyability(f, droneClass);
+        const pill = document.createElement('div');
+        pill.className = `fly-pill ${flyAssess.cls}`;
+        pill.textContent = flyAssess.verdict;
+        pill.dataset.tooltip = flyAssess.tip;
+        row.appendChild(pill);
         list.appendChild(row);
     });
 }
@@ -612,6 +649,32 @@ function renderChecklist() {
 
                 complete.appendChild(svg);
                 complete.appendChild(wrap);
+                // Print briefing button
+                const printBriefBtn = document.createElement('button');
+                printBriefBtn.type = 'button';
+                printBriefBtn.className = 'cc-print-btn';
+                printBriefBtn.title = 'Print preflight briefing';
+                const psvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                psvg.setAttribute('viewBox', '0 0 24 24');
+                psvg.setAttribute('fill', 'none');
+                psvg.setAttribute('stroke', 'currentColor');
+                psvg.setAttribute('stroke-width', '2');
+                psvg.setAttribute('width', '16');
+                psvg.setAttribute('height', '16');
+                psvg.innerHTML = '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>';
+                printBriefBtn.appendChild(psvg);
+                printBriefBtn.appendChild(document.createTextNode(' Print Briefing'));
+                printBriefBtn.addEventListener('click', () => {
+                    const content = generateBriefingContent(checklist);
+                    if (!content) return;
+                    try {
+                        localStorage.setItem('uavchum_briefing_content', content);
+                        window.open('/static/briefing.html', '_blank');
+                    } catch (e) {
+                        alert('Unable to open briefing: ' + e.message);
+                    }
+                });
+                complete.appendChild(printBriefBtn);
                 complete.classList.remove('hidden');
             } else {
                 complete.classList.add('hidden');
@@ -819,7 +882,9 @@ function renderAviation(d) {
         if (d.metar.length > 1) {
             history.appendChild(el('div', 'label-small', `Previous Reports (${d.metar.length - 1})`));
             const histList = el('div', 'metar-hist-list');
-            d.metar.slice(1).forEach(x => histList.appendChild(renderMetarHistoryRow(x)));
+            d.metar.slice(1).forEach(x => {
+                histList.appendChild(renderMetarHistoryRow(x));
+            });
             history.appendChild(histList);
         }
         const colBtn = $('#metarCollapseBtn');
@@ -843,7 +908,9 @@ function renderAviation(d) {
     if (d.taf?.length) {
         const tafEl = $('#tafContent');
         tafEl.replaceChildren();
-        d.taf.forEach(t => tafEl.appendChild(renderTAFDecoded(t)));
+        d.taf.forEach(t => {
+            tafEl.appendChild(renderTAFDecoded(t));
+        });
     } else {
         const tafEl = $('#tafContent');
         tafEl.replaceChildren();
@@ -854,7 +921,9 @@ function renderAviation(d) {
         $('#alertCount').textContent = `${d.airsigmet.length} active`;
         const alertContent = $('#alertContent');
         alertContent.replaceChildren();
-        d.airsigmet.forEach(a => alertContent.appendChild(renderAlertDecoded(a)));
+        d.airsigmet.forEach(a => {
+            alertContent.appendChild(renderAlertDecoded(a));
+        });
     } else {
         $('#alertCount').textContent = 'None';
         const alertContent = $('#alertContent');
@@ -866,7 +935,9 @@ function renderAviation(d) {
         $('#pirepCount').textContent = `${d.pireps.length}`;
         const pirepContent = $('#pirepContent');
         pirepContent.replaceChildren();
-        d.pireps.forEach(p => pirepContent.appendChild(renderPIREPDecoded(p)));
+        d.pireps.forEach(p => {
+            pirepContent.appendChild(renderPIREPDecoded(p));
+        });
     } else {
         $('#pirepCount').textContent = '0';
         const pirepContent = $('#pirepContent');
@@ -2373,6 +2444,118 @@ function renderSources(sources) {
     });
 })();
 
+
+/* ── Preflight Briefing ────────────────────────────────────────── */
+function generateBriefingContent(checklistEl) {
+    if (!currentWxData) return null;
+    const wx     = currentWxData;
+    const c      = wx.current;
+    const dr     = assessDrone(wx, droneClass);
+    const name   = $('#locationName').textContent || 'Unknown Location';
+    const now    = new Date().toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' });
+    const drcls  = droneClass.charAt(0).toUpperCase() + droneClass.slice(1);
+
+    // Factor rows
+    const factorRows = dr.factors.map(f => {
+        return `<tr>
+          <td>${f.name}</td>
+          <td>${f.value}</td>
+          <td>${f.note}</td>
+        </tr>`;
+    }).join('');
+
+    // Forecast rows
+    const forecastRows = (wx.forecast || []).map(f => {
+        const dt   = new Date(f.date + 'T12:00:00');
+        const day  = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        const fly  = assessDayFlyability(f, droneClass);
+        return `<tr class="forecast-row">
+          <td class="fc-day">${day}</td>
+          <td class="fc-desc">${f.desc}</td>
+          <td class="fc-temp">${toTemp(f.low)}°–${toTemp(f.high)}°</td>
+          <td class="fc-wind">${toWind(f.wind_max)} ${windUnit()}</td>
+          <td class="fc-precip">${f.precip_prob > 0 ? f.precip_prob + '%' : '—'}</td>
+          <td><span style="font-weight:bold">${fly.verdict}</span></td>
+        </tr>`;
+    }).join('');
+
+    // Checklist
+    const checkItems = checklistEl
+        ? [...checklistEl.querySelectorAll('.checklist-item')].map(row => {
+            const checked = row.querySelector('.check-box')?.classList.contains('checked') ?? false;
+            const text    = row.querySelector('span')?.textContent ?? '';
+            return { checked, text };
+          })
+        : [];
+        
+    const checklistRows = checkItems.map(item => {
+        const mark = item.checked ? '✓' : '';
+        return `<tr>
+          <td style="width:32px; text-align:center; font-weight:bold;">${mark}</td>
+          <td>${item.text}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+<div class="page">
+  <button class="print-btn" style="display:none">Print Briefing</button>
+  
+  <div class="header">
+    <div>
+      <div class="brand">UAVChum</div>
+      <div class="brand-sub">Preflight Briefing</div>
+    </div>
+    <div class="meta">
+      <div><b>${now}</b></div>
+      <div>LOCATION: ${name}</div>
+      <div>CLASS: ${drcls}</div>
+    </div>
+  </div>
+
+  <div class="verdict-box">
+    ${dr.verdict}
+    <div class="verdict-sub">${dr.summary}</div>
+  </div>
+
+  <div class="sec-head">Current Telemetry</div>
+  <table>
+    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Condition</td><td>${c.desc}</td></tr>
+      <tr><td>Temperature</td><td>${toTemp(c.temp)}${tempUnit()} (Feels ${toTemp(c.feels_like)}°)</td></tr>
+      <tr><td>Wind</td><td>${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}</td></tr>
+      <tr><td>Gusts</td><td>${toWind(c.wind_gusts)} ${windUnit()}</td></tr>
+      <tr><td>Humidity</td><td>${c.humidity}%</td></tr>
+      <tr><td>Pressure</td><td>${Math.round(c.pressure)} hPa</td></tr>
+      <tr><td>Cloud Cover</td><td>${c.cloud_cover ?? '—'}%</td></tr>
+      <tr><td>Visibility</td><td>${c.visibility != null ? c.visibility + ' km' : '—'}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">System Assessment</div>
+  <table>
+    <thead><tr><th>Parameter</th><th>Value</th><th>Status Note</th></tr></thead>
+    <tbody>${factorRows}</tbody>
+  </table>
+
+  <div class="sec-head">Pre-Flight Checklist</div>
+  <table>
+    <thead><tr><th style="width:32px; text-align:center;">OK</th><th>Item</th></tr></thead>
+    <tbody>${checklistRows || '<tr><td></td><td>—</td></tr>'}</tbody>
+  </table>
+
+  <div class="sec-head">7-Day Forecast Horizon</div>
+  <table>
+    <thead><tr><th>Day</th><th>Sky</th><th>Temp</th><th>Wind (Max)</th><th>Precip</th><th>Verdict</th></tr></thead>
+    <tbody>${forecastRows}</tbody>
+  </table>
+
+  <div class="footer">
+    <span>UAVChum Intelligence // uavchum.hehaw.net</span>
+    <span>Local Time: ${wx.timezone || 'Unknown'}</span>
+  </div>
+</div>`;
+}
 /* ── Share & Print ─────────────────────────────────────────────── */
 (function setupSharePrint() {
     $('#shareBtn')?.addEventListener('click', async () => {
