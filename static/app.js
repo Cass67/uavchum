@@ -1,5 +1,7 @@
 const $ = s => document.querySelector(s);
 
+const L = window.L;
+
 // ── Global state ────────────────────────────────────────────────
 let currentElevation = null;
 let currentWxData    = null;
@@ -663,13 +665,14 @@ function renderChecklist() {
                 printBriefBtn.appendChild(psvg);
                 printBriefBtn.appendChild(document.createTextNode(' Print Briefing'));
                 printBriefBtn.addEventListener('click', () => {
-                    const html = generateBriefingHTML(checklist);
-                    if (!html) return;
-                    const w = window.open('', '_blank');
-                    w.document.write(html);
-                    w.document.close();
-                    w.focus();
-                    setTimeout(() => w.print(), 300);
+                    const content = generateBriefingContent(checklist);
+                    if (!content) return;
+                    try {
+                        localStorage.setItem('uavchum_briefing_content', content);
+                        window.open('/static/briefing.html', '_blank');
+                    } catch (e) {
+                        alert('Unable to open briefing: ' + e.message);
+                    }
                 });
                 complete.appendChild(printBriefBtn);
                 complete.classList.remove('hidden');
@@ -879,7 +882,9 @@ function renderAviation(d) {
         if (d.metar.length > 1) {
             history.appendChild(el('div', 'label-small', `Previous Reports (${d.metar.length - 1})`));
             const histList = el('div', 'metar-hist-list');
-            d.metar.slice(1).forEach(x => histList.appendChild(renderMetarHistoryRow(x)));
+            d.metar.slice(1).forEach(x => {
+                histList.appendChild(renderMetarHistoryRow(x));
+            });
             history.appendChild(histList);
         }
         const colBtn = $('#metarCollapseBtn');
@@ -903,7 +908,9 @@ function renderAviation(d) {
     if (d.taf?.length) {
         const tafEl = $('#tafContent');
         tafEl.replaceChildren();
-        d.taf.forEach(t => tafEl.appendChild(renderTAFDecoded(t)));
+        d.taf.forEach(t => {
+            tafEl.appendChild(renderTAFDecoded(t));
+        });
     } else {
         const tafEl = $('#tafContent');
         tafEl.replaceChildren();
@@ -914,7 +921,9 @@ function renderAviation(d) {
         $('#alertCount').textContent = `${d.airsigmet.length} active`;
         const alertContent = $('#alertContent');
         alertContent.replaceChildren();
-        d.airsigmet.forEach(a => alertContent.appendChild(renderAlertDecoded(a)));
+        d.airsigmet.forEach(a => {
+            alertContent.appendChild(renderAlertDecoded(a));
+        });
     } else {
         $('#alertCount').textContent = 'None';
         const alertContent = $('#alertContent');
@@ -926,7 +935,9 @@ function renderAviation(d) {
         $('#pirepCount').textContent = `${d.pireps.length}`;
         const pirepContent = $('#pirepContent');
         pirepContent.replaceChildren();
-        d.pireps.forEach(p => pirepContent.appendChild(renderPIREPDecoded(p)));
+        d.pireps.forEach(p => {
+            pirepContent.appendChild(renderPIREPDecoded(p));
+        });
     } else {
         $('#pirepCount').textContent = '0';
         const pirepContent = $('#pirepContent');
@@ -2435,49 +2446,40 @@ function renderSources(sources) {
 
 
 /* ── Preflight Briefing ────────────────────────────────────────── */
-function generateBriefingHTML(checklistEl) {
+function generateBriefingContent(checklistEl) {
     if (!currentWxData) return null;
     const wx     = currentWxData;
     const c      = wx.current;
     const dr     = assessDrone(wx, droneClass);
     const name   = $('#locationName').textContent || 'Unknown Location';
-    const now    = new Date().toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' });
+    const now    = new Date().toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' });
     const drcls  = droneClass.charAt(0).toUpperCase() + droneClass.slice(1);
 
-    const vc = dr.verdict === 'GO' ? '#16a34a' : dr.verdict === 'NO-GO' ? '#dc2626' : '#b45309';
-    const vcBg = dr.verdict === 'GO' ? '#f0fdf4' : dr.verdict === 'NO-GO' ? '#fef2f2' : '#fffbeb';
-    const vcBorder = dr.verdict === 'GO' ? '#bbf7d0' : dr.verdict === 'NO-GO' ? '#fecaca' : '#fde68a';
-
-    // Factor rows — coloured left border
+    // Factor rows
     const factorRows = dr.factors.map(f => {
-        const col = f.status === 'danger' ? '#dc2626' : f.status === 'caution' ? '#d97706' : '#16a34a';
-        const bg  = f.status === 'danger' ? '#fff5f5' : f.status === 'caution' ? '#fffcf0' : '#f6fef9';
-        return `<tr style="background:${bg}">
-          <td style="padding:7px 10px;border-left:3px solid ${col};font-weight:600;font-size:0.78rem;color:#111;white-space:nowrap">${f.name}</td>
-          <td style="padding:7px 10px;font-size:0.78rem;color:#333;white-space:nowrap">${f.value}</td>
-          <td style="padding:7px 10px;font-size:0.77rem;color:#555">${f.note}</td>
+        return `<tr>
+          <td>${f.name}</td>
+          <td>${f.value}</td>
+          <td>${f.note}</td>
         </tr>`;
     }).join('');
 
-    // 7-day forecast rows
-    const forecastRows = (wx.forecast || []).map((f, i) => {
+    // Forecast rows
+    const forecastRows = (wx.forecast || []).map(f => {
         const dt   = new Date(f.date + 'T12:00:00');
-        const day  = dt.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+        const day  = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
         const fly  = assessDayFlyability(f, droneClass);
-        const fc   = fly.cls === 'go' ? '#16a34a' : fly.cls === 'no-go' ? '#dc2626' : '#d97706';
-        const fcBg = fly.cls === 'go' ? '#f0fdf4' : fly.cls === 'no-go' ? '#fef2f2' : '#fffbeb';
-        const rowBg = i % 2 === 0 ? '#fff' : '#f9fafb';
-        return `<tr style="background:${rowBg}">
-          <td style="padding:7px 10px;font-weight:600;font-size:0.78rem;white-space:nowrap">${day}</td>
-          <td style="padding:7px 10px;font-size:0.78rem;color:#444">${f.desc}</td>
-          <td style="padding:7px 10px;font-size:0.78rem;white-space:nowrap">${toTemp(f.low)}°–${toTemp(f.high)}°</td>
-          <td style="padding:7px 10px;font-size:0.78rem;white-space:nowrap">${toWind(f.wind_max)} ${windUnit()}</td>
-          <td style="padding:7px 10px;font-size:0.78rem;color:#0ea5e9">${f.precip_prob > 0 ? f.precip_prob + '%' : '—'}</td>
-          <td style="padding:7px 10px"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;background:${fcBg};color:${fc};border:1px solid ${fc}44">${fly.verdict}</span></td>
+        return `<tr class="forecast-row">
+          <td class="fc-day">${day}</td>
+          <td class="fc-desc">${f.desc}</td>
+          <td class="fc-temp">${toTemp(f.low)}°–${toTemp(f.high)}°</td>
+          <td class="fc-wind">${toWind(f.wind_max)} ${windUnit()}</td>
+          <td class="fc-precip">${f.precip_prob > 0 ? f.precip_prob + '%' : '—'}</td>
+          <td><span style="font-weight:bold">${fly.verdict}</span></td>
         </tr>`;
     }).join('');
 
-    // Checklist items from DOM
+    // Checklist
     const checkItems = checklistEl
         ? [...checklistEl.querySelectorAll('.checklist-item')].map(row => {
             const checked = row.querySelector('.check-box')?.classList.contains('checked') ?? false;
@@ -2485,131 +2487,74 @@ function generateBriefingHTML(checklistEl) {
             return { checked, text };
           })
         : [];
+        
     const checklistRows = checkItems.map(item => {
-        const icon   = item.checked
-            ? `<span style="color:#16a34a;font-size:1rem">&#10003;</span>`
-            : `<span style="color:#d1d5db;font-size:0.9rem">&#9675;</span>`;
-        const color  = item.checked ? '#111' : '#9ca3af';
-        const strike = item.checked ? '' : '';
-        return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #f3f4f6">
-          <div style="width:22px;height:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:5px;background:${item.checked ? '#dcfce7' : '#f3f4f6'};border:1px solid ${item.checked ? '#86efac' : '#e5e7eb'}">${icon}</div>
-          <span style="font-size:0.8rem;color:${color}">${item.text}</span>
-        </div>`;
+        const mark = item.checked ? '✓' : '';
+        return `<tr>
+          <td style="width:32px; text-align:center; font-weight:bold;">${mark}</td>
+          <td>${item.text}</td>
+        </tr>`;
     }).join('');
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>UAVChum Preflight Briefing — ${name}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:13px;color:#111;background:#f8fafc;padding:0}
-  .page{max-width:860px;margin:0 auto;padding:28px 32px}
-  /* Header */
-  .branding{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;padding-bottom:14px;border-bottom:2px solid #e2e8f0}
-  .brand-name{font-size:1.1rem;font-weight:800;letter-spacing:-0.02em;color:#0f172a}
-  .brand-sub{font-size:0.72rem;color:#64748b;margin-top:2px}
-  .gen-meta{text-align:right;font-size:0.72rem;color:#64748b;line-height:1.6}
-  /* Verdict banner */
-  .verdict-block{display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:10px;background:${vcBg};border:1px solid ${vcBorder};margin-bottom:20px}
-  .verdict-pill-big{padding:6px 18px;border-radius:20px;font-size:1rem;font-weight:800;color:#fff;background:${vc};letter-spacing:0.04em;white-space:nowrap}
-  .verdict-summary{font-size:0.88rem;color:#374151}
-  .verdict-loc{font-size:0.78rem;color:#6b7280;margin-top:3px}
-  /* Section headers */
-  .section-head{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin:22px 0 10px;display:flex;align-items:center;gap:8px}
-  .section-head::after{content:'';flex:1;height:1px;background:#e2e8f0}
-  /* Conditions grid */
-  .cond-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px}
-  .cond-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px}
-  .cond-label{font-size:0.67rem;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8}
-  .cond-val{font-size:0.95rem;font-weight:700;color:#0f172a;margin-top:3px}
-  /* Tables */
-  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}
-  thead tr{background:#f1f5f9}
-  th{text-align:left;padding:8px 10px;font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0}
-  td{border-bottom:1px solid #f1f5f9}
-  /* Checklist */
-  .checklist-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px}
-  .checklist-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
-  /* Two-col layout */
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:4px}
-  /* Footer */
-  .footer{margin-top:28px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:0.68rem;color:#94a3b8}
-  @media print{
-    body{background:#fff}
-    .page{padding:18px 22px}
-    table{page-break-inside:avoid}
-    .checklist-wrap{page-break-inside:avoid}
-  }
-</style>
-</head>
-<body>
+    return `
 <div class="page">
-
-  <div class="branding">
+  <button class="print-btn" style="display:none">Print Briefing</button>
+  
+  <div class="header">
     <div>
-      <div class="brand-name">UAVChum</div>
-      <div class="brand-sub">Drone &amp; Weather Intelligence</div>
+      <div class="brand">UAVChum</div>
+      <div class="brand-sub">Preflight Briefing</div>
     </div>
-    <div class="gen-meta">
-      <strong>Preflight Briefing</strong><br>
-      ${now}<br>
-      Drone class: ${drcls}
+    <div class="meta">
+      <div><b>${now}</b></div>
+      <div>LOCATION: ${name}</div>
+      <div>CLASS: ${drcls}</div>
     </div>
   </div>
 
-  <div class="verdict-block">
-    <div class="verdict-pill-big">${dr.verdict}</div>
-    <div>
-      <div class="verdict-summary">${dr.summary}</div>
-      <div class="verdict-loc">${name}</div>
-    </div>
+  <div class="verdict-box">
+    ${dr.verdict}
+    <div class="verdict-sub">${dr.summary}</div>
   </div>
 
-  <div class="section-head">Current Conditions</div>
-  <div class="cond-grid">
-    <div class="cond-card"><div class="cond-label">Weather</div><div class="cond-val">${c.desc}</div></div>
-    <div class="cond-card"><div class="cond-label">Temperature</div><div class="cond-val">${toTemp(c.temp)}${tempUnit()} <span style="font-size:0.75rem;font-weight:400;color:#64748b">feels ${toTemp(c.feels_like)}${tempUnit()}</span></div></div>
-    <div class="cond-card"><div class="cond-label">Wind</div><div class="cond-val">${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}</div></div>
-    <div class="cond-card"><div class="cond-label">Gusts</div><div class="cond-val">${toWind(c.wind_gusts)} ${windUnit()}</div></div>
-    <div class="cond-card"><div class="cond-label">Humidity</div><div class="cond-val">${c.humidity}%</div></div>
-    <div class="cond-card"><div class="cond-label">Pressure</div><div class="cond-val">${Math.round(c.pressure)} hPa</div></div>
-    <div class="cond-card"><div class="cond-label">Cloud Cover</div><div class="cond-val">${c.cloud_cover ?? '—'}%</div></div>
-    <div class="cond-card"><div class="cond-label">Visibility</div><div class="cond-val">${c.visibility != null ? c.visibility + ' km' : '—'}</div></div>
-  </div>
-
-  <div class="two-col" style="margin-top:20px">
-    <div>
-      <div class="section-head">Drone Assessment</div>
-      <table>
-        <thead><tr><th>Factor</th><th>Value</th><th>Note</th></tr></thead>
-        <tbody>${factorRows}</tbody>
-      </table>
-    </div>
-    <div>
-      <div class="section-head">Pre-Flight Checklist</div>
-      <div class="checklist-wrap">
-        <div class="checklist-grid">${checklistRows}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section-head" style="margin-top:20px">7-Day Outlook</div>
+  <div class="sec-head">Current Telemetry</div>
   <table>
-    <thead><tr><th>Day</th><th>Conditions</th><th>Temp</th><th>Max Wind</th><th>Precip</th><th>Verdict</th></tr></thead>
+    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Condition</td><td>${c.desc}</td></tr>
+      <tr><td>Temperature</td><td>${toTemp(c.temp)}${tempUnit()} (Feels ${toTemp(c.feels_like)}°)</td></tr>
+      <tr><td>Wind</td><td>${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}</td></tr>
+      <tr><td>Gusts</td><td>${toWind(c.wind_gusts)} ${windUnit()}</td></tr>
+      <tr><td>Humidity</td><td>${c.humidity}%</td></tr>
+      <tr><td>Pressure</td><td>${Math.round(c.pressure)} hPa</td></tr>
+      <tr><td>Cloud Cover</td><td>${c.cloud_cover ?? '—'}%</td></tr>
+      <tr><td>Visibility</td><td>${c.visibility != null ? c.visibility + ' km' : '—'}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">System Assessment</div>
+  <table>
+    <thead><tr><th>Parameter</th><th>Value</th><th>Status Note</th></tr></thead>
+    <tbody>${factorRows}</tbody>
+  </table>
+
+  <div class="sec-head">Pre-Flight Checklist</div>
+  <table>
+    <thead><tr><th style="width:32px; text-align:center;">OK</th><th>Item</th></tr></thead>
+    <tbody>${checklistRows || '<tr><td></td><td>—</td></tr>'}</tbody>
+  </table>
+
+  <div class="sec-head">7-Day Forecast Horizon</div>
+  <table>
+    <thead><tr><th>Day</th><th>Sky</th><th>Temp</th><th>Wind (Max)</th><th>Precip</th><th>Verdict</th></tr></thead>
     <tbody>${forecastRows}</tbody>
   </table>
 
   <div class="footer">
-    <span>UAVChum &nbsp;·&nbsp; uavchum.hehaw.net</span>
-    <span>All times local to ${wx.timezone || 'location'}</span>
+    <span>UAVChum Intelligence // uavchum.hehaw.net</span>
+    <span>Local Time: ${wx.timezone || 'Unknown'}</span>
   </div>
-
-</div>
-</body>
-</html>`;
+</div>`;
 }
 /* ── Share & Print ─────────────────────────────────────────────── */
 (function setupSharePrint() {
