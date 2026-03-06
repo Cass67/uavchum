@@ -3,6 +3,8 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      UAVCHUM_ENV: production
     read_only: true
     tmpfs:
       - /tmp:mode=1777

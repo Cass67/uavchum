@@ -44,6 +44,7 @@ systemctl enable --now docker
 cat > /home/cass/uavchum/.env << EOF
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 TUNNEL_TOKEN=paste-your-tunnel-token-here
+TRUSTED_HOSTS=uavchum.example.com
 EOF
 chmod 600 /home/cass/uavchum/.env
 ```

@@ -20,8 +20,8 @@
     --glow2:     rgba(79,142,247,0.05);
     --r:  14px;
     --rs: 10px;
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    --font: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
 }
 
 /* ── Light mode overrides ────────────────────────────────────────── */

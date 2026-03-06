@@ -1032,6 +1032,7 @@ const RADAR_ATTR = 'Radar © <a href="https://www.rainviewer.com">RainViewer</a>
 
 let _radarLayer        = null;
 let _radarRefreshTimer = null;
+const RADAR_MAX_SUPPORTED_ZOOM = 7;
 
 const FAA_COLORS = {
     B: { color: '#ef4444', label: 'Class B' },
@@ -1785,7 +1786,9 @@ function setupDroneMap(lat, lon, name) {
         droneMap = L.map('droneMap', { zoomControl: true });
         L.tileLayer(TILE_URL, {
             attribution: TILE_ATTR + ' | <a href="https://www.openaip.net">OpenAIP</a>',
-            subdomains: 'abcd', maxZoom: 19,
+            subdomains: 'abcd',
+            maxZoom: 19,
+            maxNativeZoom: 19,
         }).addTo(droneMap);
         droneMap.setView([lat, lon], 11);
         droneMap.on('popupopen', e => {
@@ -1820,14 +1823,27 @@ async function loadRadarLayer() {
         const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/4/1_1.png`;
 
         if (_radarLayer) droneMap.removeLayer(_radarLayer);
-        _radarLayer = L.tileLayer(tileUrl, {
+        _radarLayer = L.tileLayer('', {
             attribution: RADAR_ATTR,
             opacity: 0.65,
             zIndex: 5,
             tileSize: 256,
+            maxZoom: 19,
+            maxNativeZoom: RADAR_MAX_SUPPORTED_ZOOM,
         });
+        _radarLayer.getTileUrl = function(coords) {
+            const clampedZoom = Math.min(coords.z, RADAR_MAX_SUPPORTED_ZOOM);
+            const zoomDelta = coords.z - clampedZoom;
+            const scale = 2 ** Math.max(0, zoomDelta);
+            return L.Util.template(tileUrl, {
+                ...coords,
+                z: clampedZoom,
+                x: Math.floor(coords.x / scale),
+                y: Math.floor(coords.y / scale),
+                r: L.Browser.retina ? '@2x' : '',
+            });
+        };
         droneLayerGroups.radar = _radarLayer;
-        // Only add to map if the toggle isn't currently off
         const radarToggle = document.querySelector('[data-layer="radar"]');
         if (!radarToggle || radarToggle.checked) _radarLayer.addTo(droneMap);
 

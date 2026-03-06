@@ -23,16 +23,31 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_production() -> bool:
+    return os.environ.get("UAVCHUM_ENV", os.environ.get("FLASK_ENV", "")).strip().lower() == "production"
+
+
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=_env_flag("SESSION_COOKIE_SECURE", default=_is_production()),
 )
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 app.config["TEMPLATES_AUTO_RELOAD"] = False
+trusted_hosts = [item.strip() for item in os.environ.get("TRUSTED_HOSTS", "").split(",") if item.strip()]
+if trusted_hosts:
+    app.config["TRUSTED_HOSTS"] = trusted_hosts
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -108,19 +123,16 @@ def set_security_headers(response):
         "form-action 'self'; "
         "manifest-src 'self'; "
         "worker-src 'self'; "
-        f"script-src 'self' https://unpkg.com 'nonce-{nonce}'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
         "script-src-attr 'none'; "
-        "style-src 'self' https://unpkg.com "
-        "https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        "style-src 'self'; "
         "style-src-attr 'unsafe-inline'; "
-        "font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "font-src 'self' data:; "
         "img-src 'self' data: https://*.tile.openstreetmap.org "
         "https://*.basemaps.cartocdn.com "
         "https://tilecache.rainviewer.com; "
         "connect-src 'self' https://nominatim.openstreetmap.org "
-        "https://fonts.googleapis.com https://*.basemaps.cartocdn.com "
-        "https://cdnjs.cloudflare.com https://unpkg.com "
-        "https://api.rainviewer.com"
+        "https://*.basemaps.cartocdn.com https://api.rainviewer.com"
     )
     if request.is_secure:
         csp += "; upgrade-insecure-requests"

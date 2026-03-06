@@ -27,9 +27,15 @@ uavchum.png
 
 # AI tooling
 .claude/
+.sisyphus
 
 # Docs
 docs/*
 
 # Deploy (host-specific)
 deploy/inventory.ini
+
+# tests
+
+scripts/*
+

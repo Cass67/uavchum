@@ -70,6 +70,26 @@ python app.py
 
 Then open [http://localhost:5555](http://localhost:5555).
 
+## Security Posture
+
+The browser assets are now served locally:
+
+- Leaflet is loaded from repo-local static files instead of `unpkg`
+- Weather Icons are loaded from repo-local static files instead of `cdnjs`
+- External web fonts were removed
+
+Flask production defaults are also tighter:
+
+- `SESSION_COOKIE_SECURE` is environment-aware instead of always forced on
+- optional host-header validation is supported with `TRUSTED_HOSTS`
+- CSP no longer permits third-party script/style/font CDNs
+
+For production behind Cloudflare Tunnel, set:
+
+```bash
+TRUSTED_HOSTS=your-domain.example,uavchum.your-domain.example
+```
+
 ### Container (Docker/Podman)
 
 This repo supports two container workflows:
