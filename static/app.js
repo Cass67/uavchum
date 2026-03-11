@@ -674,10 +674,10 @@ function renderChecklist() {
         printSvg.append(printPoly, printPath, printRect);
         printBtn.append(printSvg, document.createTextNode(' Print Briefing'));
         printBtn.addEventListener('click', () => {
-            const content = generateBriefingContent(checklist);
-            if (!content) return;
+            const payload = generateBriefingPayload(checklist);
+            if (!payload) return;
             try {
-                localStorage.setItem('uavchum_briefing_content', content);
+                localStorage.setItem('uavchum_briefing_content', JSON.stringify(payload));
                 window.open('/static/briefing.html', '_blank');
             } catch (e) {
                 alert('Unable to open briefing: ' + e.message);
@@ -2481,115 +2481,58 @@ function renderSources(sources) {
 
 
 /* ── Preflight Briefing ────────────────────────────────────────── */
-function generateBriefingContent(checklistEl) {
+function generateBriefingPayload(checklistEl) {
     if (!currentWxData) return null;
-    const wx     = currentWxData;
-    const c      = wx.current;
-    const dr     = assessDrone(wx, droneClass);
-    const name   = $('#locationName').textContent || 'Unknown Location';
-    const now    = new Date().toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' });
-    const drcls  = droneClass.charAt(0).toUpperCase() + droneClass.slice(1);
+    const wx = currentWxData;
+    const c = wx.current;
+    const dr = assessDrone(wx, droneClass);
+    const name = $('#locationName').textContent || 'Unknown Location';
+    const generatedAt = new Date().toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' });
+    const droneClassLabel = droneClass.charAt(0).toUpperCase() + droneClass.slice(1);
 
-    // Factor rows
-    const factorRows = dr.factors.map(f => {
-        return `<tr>
-          <td>${f.name}</td>
-          <td>${f.value}</td>
-          <td>${f.note}</td>
-        </tr>`;
-    }).join('');
-
-    // Forecast rows
-    const forecastRows = (wx.forecast || []).map(f => {
-        const dt   = new Date(f.date + 'T12:00:00');
-        const day  = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-        const fly  = assessDayFlyability(f, droneClass);
-        return `<tr class="forecast-row">
-          <td class="fc-day">${day}</td>
-          <td class="fc-desc">${f.desc}</td>
-          <td class="fc-temp">${toTemp(f.low)}°–${toTemp(f.high)}°</td>
-          <td class="fc-wind">${toWind(f.wind_max)} ${windUnit()}</td>
-          <td class="fc-precip">${f.precip_prob > 0 ? f.precip_prob + '%' : '—'}</td>
-          <td><span style="font-weight:bold">${fly.verdict}</span></td>
-        </tr>`;
-    }).join('');
-
-    // Checklist
-    const checkItems = checklistEl
-        ? [...checklistEl.querySelectorAll('.checklist-item')].map(row => {
-            const checked = row.querySelector('.check-box')?.classList.contains('checked') ?? false;
-            const text    = row.querySelector('span')?.textContent ?? '';
-            return { checked, text };
-          })
+    const checklist = checklistEl
+        ? [...checklistEl.querySelectorAll('.checklist-item')].map(row => ({
+            checked: row.querySelector('.check-box')?.classList.contains('checked') ?? false,
+            text: row.querySelector('span')?.textContent ?? ''
+        }))
         : [];
-        
-    const checklistRows = checkItems.map(item => {
-        const mark = item.checked ? '✓' : '';
-        return `<tr>
-          <td style="width:32px; text-align:center; font-weight:bold;">${mark}</td>
-          <td>${item.text}</td>
-        </tr>`;
-    }).join('');
 
-    return `
-<div class="page">
-  <button class="print-btn" style="display:none">Print Briefing</button>
-  
-  <div class="header">
-    <div>
-      <div class="brand">UAVChum</div>
-      <div class="brand-sub">Preflight Briefing</div>
-    </div>
-    <div class="meta">
-      <div><b>${now}</b></div>
-      <div>LOCATION: ${name}</div>
-      <div>CLASS: ${drcls}</div>
-    </div>
-  </div>
-
-  <div class="verdict-box">
-    ${dr.verdict}
-    <div class="verdict-sub">${dr.summary}</div>
-  </div>
-
-  <div class="sec-head">Current Telemetry</div>
-  <table>
-    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
-    <tbody>
-      <tr><td>Condition</td><td>${c.desc}</td></tr>
-      <tr><td>Temperature</td><td>${toTemp(c.temp)}${tempUnit()} (Feels ${toTemp(c.feels_like)}°)</td></tr>
-      <tr><td>Wind</td><td>${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}</td></tr>
-      <tr><td>Gusts</td><td>${toWind(c.wind_gusts)} ${windUnit()}</td></tr>
-      <tr><td>Humidity</td><td>${c.humidity}%</td></tr>
-      <tr><td>Pressure</td><td>${Math.round(c.pressure)} hPa</td></tr>
-      <tr><td>Cloud Cover</td><td>${c.cloud_cover ?? '—'}%</td></tr>
-      <tr><td>Visibility</td><td>${c.visibility != null ? c.visibility + ' km' : '—'}</td></tr>
-    </tbody>
-  </table>
-
-  <div class="sec-head">System Assessment</div>
-  <table>
-    <thead><tr><th>Parameter</th><th>Value</th><th>Status Note</th></tr></thead>
-    <tbody>${factorRows}</tbody>
-  </table>
-
-  <div class="sec-head">Pre-Flight Checklist</div>
-  <table>
-    <thead><tr><th style="width:32px; text-align:center;">OK</th><th>Item</th></tr></thead>
-    <tbody>${checklistRows || '<tr><td></td><td>—</td></tr>'}</tbody>
-  </table>
-
-  <div class="sec-head">7-Day Forecast Horizon</div>
-  <table>
-    <thead><tr><th>Day</th><th>Sky</th><th>Temp</th><th>Wind (Max)</th><th>Precip</th><th>Verdict</th></tr></thead>
-    <tbody>${forecastRows}</tbody>
-  </table>
-
-  <div class="footer">
-    <span>UAVChum Intelligence // uavchum.hehaw.net</span>
-    <span>Local Time: ${wx.timezone || 'Unknown'}</span>
-  </div>
-</div>`;
+    return {
+        generatedAt,
+        location: name,
+        droneClass: droneClassLabel,
+        verdict: dr.verdict,
+        summary: dr.summary,
+        currentTelemetry: [
+            { label: 'Condition', value: c.desc },
+            { label: 'Temperature', value: `${toTemp(c.temp)}${tempUnit()} (Feels ${toTemp(c.feels_like)}°)` },
+            { label: 'Wind', value: `${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}` },
+            { label: 'Gusts', value: `${toWind(c.wind_gusts)} ${windUnit()}` },
+            { label: 'Humidity', value: `${c.humidity}%` },
+            { label: 'Pressure', value: `${Math.round(c.pressure)} hPa` },
+            { label: 'Cloud Cover', value: `${c.cloud_cover ?? '—'}%` },
+            { label: 'Visibility', value: c.visibility != null ? `${c.visibility} km` : '—' }
+        ],
+        systemAssessment: dr.factors.map(f => ({
+            name: f.name,
+            value: f.value,
+            note: f.note
+        })),
+        checklist,
+        forecast: (wx.forecast || []).map(f => {
+            const dt = new Date(f.date + 'T12:00:00');
+            const fly = assessDayFlyability(f, droneClass);
+            return {
+                day: dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+                desc: f.desc,
+                temp: `${toTemp(f.low)}°–${toTemp(f.high)}°`,
+                wind: `${toWind(f.wind_max)} ${windUnit()}`,
+                precip: f.precip_prob > 0 ? `${f.precip_prob}%` : '—',
+                verdict: fly.verdict
+            };
+        }),
+        timezone: wx.timezone || 'Unknown'
+    };
 }
 /* ── Share & Print ─────────────────────────────────────────────── */
 (function setupSharePrint() {
