@@ -30,11 +30,15 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	req.URL.RawQuery = qp.Encode()
 
 	resp, err := httpClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		jsonError(w, "Search unavailable", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		jsonError(w, "Search unavailable", http.StatusBadGateway)
+		return
+	}
 
 	var body struct {
 		Results []struct {
@@ -86,11 +90,15 @@ func handleStation(w http.ResponseWriter, r *http.Request) {
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := httpClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		jsonError(w, "Station data unavailable", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		jsonError(w, "Station data unavailable", http.StatusBadGateway)
+		return
+	}
 
 	var data []json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || len(data) == 0 {
@@ -113,11 +121,15 @@ func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("User-Agent", "UAVChum/1.0")
 
 	resp, err := httpClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		jsonOK(w, map[string]interface{}{"found": false})
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		jsonOK(w, map[string]interface{}{"found": false})
+		return
+	}
 
 	var body struct {
 		Response struct {

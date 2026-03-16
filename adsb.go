@@ -42,14 +42,11 @@ func handleAdsb(w http.ResponseWriter, r *http.Request) {
 			logger.Warn("ADS-B source failed", "url", url, "err", err)
 			continue
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			continue
+		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&raw) == nil
+		resp.Body.Close()
+		if ok {
+			break
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-			continue
-		}
-		break
 	}
 
 	if raw == nil {

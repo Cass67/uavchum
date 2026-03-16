@@ -78,7 +78,11 @@ func main() {
 	go blitzortungThread()
 
 	r := chi.NewRouter()
-	r.Use(chimw.RealIP)
+	// RealIP trusts X-Forwarded-For / X-Real-IP. Only enable in production
+	// where Cloudflare Tunnel is the sole ingress and strips/rewrites these headers.
+	if isProduction() {
+		r.Use(chimw.RealIP)
+	}
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestSize(1024 * 1024))
@@ -109,8 +113,17 @@ func main() {
 	if port == "" {
 		port = "5555"
 	}
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    16 * 1024,
+	}
 	logger.Info("listening", "port", port)
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("server failed", "err", err)
 		os.Exit(1)
 	}
