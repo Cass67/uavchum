@@ -81,6 +81,10 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
+		return
+	}
 
 	var data openMeteoResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&data); err != nil {
