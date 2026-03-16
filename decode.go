@@ -136,28 +136,28 @@ type CloudLayer struct {
 }
 
 type MetarDecoded struct {
-	Raw        string       `json:"raw"`
-	Station    string       `json:"station"`
-	Name       string       `json:"name"`
-	FlightCat  string       `json:"flight_cat"`
-	Time       string       `json:"time"`
-	TempC      *float64     `json:"temp_c,omitempty"`
-	TempF      *int         `json:"temp_f,omitempty"`
-	DewpC      *float64     `json:"dewp_c,omitempty"`
-	DewpF      *int         `json:"dewp_f,omitempty"`
-	WindDir    string       `json:"wind_dir"`
-	WindDirDeg interface{}  `json:"wind_dir_deg"`
-	WindSpeedKt *float64    `json:"wind_speed_kt"`
-	WindGustKt  *float64    `json:"wind_gust_kt,omitempty"`
+	Raw         string       `json:"raw"`
+	Station     string       `json:"station"`
+	Name        string       `json:"name"`
+	FlightCat   string       `json:"flight_cat"`
+	Time        string       `json:"time"`
+	TempC       *float64     `json:"temp_c,omitempty"`
+	TempF       *int         `json:"temp_f,omitempty"`
+	DewpC       *float64     `json:"dewp_c,omitempty"`
+	DewpF       *int         `json:"dewp_f,omitempty"`
+	WindDir     string       `json:"wind_dir"`
+	WindDirDeg  interface{}  `json:"wind_dir_deg"`
+	WindSpeedKt *float64     `json:"wind_speed_kt"`
+	WindGustKt  *float64     `json:"wind_gust_kt,omitempty"`
 	Visibility  string       `json:"visibility"`
-	AltimHpa   *float64     `json:"altimeter_hpa,omitempty"`
-	AltimInhg  *float64     `json:"altimeter_inhg,omitempty"`
-	Clouds     []CloudLayer  `json:"clouds"`
-	ElevM      *float64     `json:"elevation_m,omitempty"`
-	ElevFt     *int         `json:"elevation_ft,omitempty"`
-	WxString   string       `json:"wx_string"`
-	Lat        *float64     `json:"lat"`
-	Lon        *float64     `json:"lon"`
+	AltimHpa    *float64     `json:"altimeter_hpa,omitempty"`
+	AltimInhg   *float64     `json:"altimeter_inhg,omitempty"`
+	Clouds      []CloudLayer `json:"clouds"`
+	ElevM       *float64     `json:"elevation_m,omitempty"`
+	ElevFt      *int         `json:"elevation_ft,omitempty"`
+	WxString    string       `json:"wx_string"`
+	Lat         *float64     `json:"lat"`
+	Lon         *float64     `json:"lon"`
 }
 
 // metarJSON mirrors the aviationweather.gov JSON response shape.
@@ -421,8 +421,8 @@ type WeatherData struct {
 		Temp       float64  `json:"temp"`
 		Pressure   float64  `json:"pressure"`
 	} `json:"current"`
-	Elevation *float64      `json:"elevation"`
-	Hourly    []HourlySlot  `json:"hourly"`
+	Elevation *float64     `json:"elevation"`
+	Hourly    []HourlySlot `json:"hourly"`
 }
 
 type HourlySlot struct {
@@ -462,9 +462,10 @@ func assessDrone(wd WeatherData) DroneAssessment {
 		factors = append(factors, densityAltFactor(c.Temp, pressure, *wd.Elevation))
 	}
 
-	if c.Group == "storm" {
+	switch c.Group {
+	case "storm":
 		factors = append(factors, factor("Severe Weather", "Thunderstorm", "danger", "Thunderstorms — do NOT fly"))
-	} else if c.Group == "fog" {
+	case "fog":
 		factors = append(factors, factor("Visibility", "Fog", "danger", "Fog — cannot maintain visual line of sight"))
 	}
 

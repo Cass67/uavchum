@@ -39,7 +39,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Search unavailable", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		jsonError(w, "Search unavailable", http.StatusBadGateway)
 		return
@@ -103,7 +103,7 @@ func handleStation(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Station data unavailable", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		jsonError(w, "Station data unavailable", http.StatusBadGateway)
 		return
@@ -142,12 +142,12 @@ func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("User-Agent", "UAVChum/1.0")
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: URL host is static; callsign path param validated against callsignRE above
 	if err != nil {
 		jsonOK(w, map[string]interface{}{"found": false})
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		jsonOK(w, map[string]interface{}{"found": false})
 		return

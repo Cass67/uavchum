@@ -45,7 +45,10 @@ func TestDecodeWMO_Unknown(t *testing.T) {
 // ── Wind direction ────────────────────────────────────────────────────────────
 
 func TestWindDirLabel(t *testing.T) {
-	cases := []struct{ deg float64; want string }{
+	cases := []struct {
+		deg  float64
+		want string
+	}{
 		{0, "N"}, {90, "E"}, {180, "S"}, {270, "W"}, {360, "N"},
 		{45, "NE"}, {135, "SE"}, {225, "SW"}, {315, "NW"},
 	}

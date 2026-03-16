@@ -165,7 +165,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 						} `json:"data"`
 					}
 					decErr := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&body)
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 					if decErr == nil {
 						for _, item := range body.Data {
 							if item.Type != "notam" {
@@ -191,7 +191,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 						}
 					}
 				} else {
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 				}
 			}
 		}
@@ -216,7 +216,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 						Message  string `json:"message"`
 					}
 					decErr := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&anbList)
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 					if decErr == nil {
 						for _, n := range anbList {
 							if strings.ToUpper(n.Location) != station {
@@ -236,7 +236,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 						}
 					}
 				} else {
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 				}
 			}
 		}
@@ -258,7 +258,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 			if resp, doErr := httpClient.Do(req); doErr == nil {
 				if resp.StatusCode == http.StatusOK {
 					body, _ := io.ReadAll(io.LimitReader(resp.Body, 500_000))
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 					type airsigmet struct {
 						RawText string `xml:"raw_text"`
 					}
@@ -276,7 +276,7 @@ func fetchNotams(r *http.Request, station string) ([]map[string]string, map[stri
 						}
 					}
 				} else {
-					resp.Body.Close()
+					resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 				}
 			}
 		}
@@ -346,7 +346,7 @@ func fetchJSON(r *http.Request, url string, params map[string]string) interface{
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}

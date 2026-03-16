@@ -8,14 +8,19 @@ linters:
     - gosec          # security issues (CWE coverage)
     - ineffassign    # assigned but never used
     - misspell       # spelling in comments/strings
-    - gofmt          # formatting
     - exhaustive     # exhaustive switch on enums
     - noctx          # http requests without context
+
+formatters:
+  enable:
+    - gofmt          # formatting
 
 linters-settings:
   gosec:
     severity: medium
     confidence: medium
+
+formatters-settings:
   gofmt:
     simplify: true
 
@@ -26,3 +31,6 @@ issues:
     # G104: errors unhandled — acceptable in deferred Close() calls
     - linters: [gosec]
       text: "G104"
+    # Body.Close / conn.Close errors are not actionable after the body has been read
+    - linters: [errcheck]
+      text: "Close.*is not checked"

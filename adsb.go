@@ -41,13 +41,13 @@ func handleAdsb(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		req.Header.Set("User-Agent", ua)
-		resp, err := httpClient.Do(req)
+		resp, err := httpClient.Do(req) //nolint:gosec // G704: URL hosts are static; path params are validated float64 bounds
 		if err != nil {
 			logger.Warn("ADS-B source failed", "url", url, "err", err)
 			continue
 		}
 		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&raw) == nil
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 		if ok {
 			break
 		}

@@ -23,13 +23,13 @@ type openMeteoResponse struct {
 		IsDay               int      `json:"is_day"`
 	} `json:"current"`
 	Hourly struct {
-		Time                    []string  `json:"time"`
-		Temperature2m           []float64 `json:"temperature_2m"`
-		PrecipitationProbability []int    `json:"precipitation_probability"`
-		WeatherCode             []int     `json:"weather_code"`
-		WindSpeed10m            []float64 `json:"wind_speed_10m"`
-		WindGusts10m            []float64 `json:"wind_gusts_10m"`
-		WindSpeed80m            []float64 `json:"wind_speed_80m"`
+		Time                     []string  `json:"time"`
+		Temperature2m            []float64 `json:"temperature_2m"`
+		PrecipitationProbability []int     `json:"precipitation_probability"`
+		WeatherCode              []int     `json:"weather_code"`
+		WindSpeed10m             []float64 `json:"wind_speed_10m"`
+		WindGusts10m             []float64 `json:"wind_gusts_10m"`
+		WindSpeed80m             []float64 `json:"wind_speed_80m"`
 	} `json:"hourly"`
 	Daily struct {
 		Time                        []string  `json:"time"`
@@ -80,7 +80,7 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
 		return

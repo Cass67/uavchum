@@ -48,15 +48,15 @@ func fetchOpenAIP(ctx *http.Request, cc string) (data interface{}, wasCached boo
 	}
 
 	url := fmt.Sprintf("https://storage.googleapis.com/29f98e10-a489-4c82-ae5e-489dbcd4912f/%s_asp.geojson", cc) //nolint:gosec // G107: see above
-	req, err := http.NewRequestWithContext(ctx.Context(), "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx.Context(), "GET", url, nil)                                       //nolint:gosec // G704: URL host is static GCS bucket; only validated 2-letter cc path segment varies
 	if err != nil {
 		return nil, false, nil
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: see above
 	if err != nil {
 		return nil, false, nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		return nil, false, nil
 	}
@@ -94,7 +94,7 @@ func countryFromLatLon(r *http.Request, lat, lon float64) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}

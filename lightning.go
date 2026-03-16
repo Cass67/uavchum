@@ -27,9 +27,9 @@ const (
 )
 
 var (
-	strikes           []strike
-	strikeMu          sync.Mutex
-	blitzortungConn   bool
+	strikes         []strike
+	strikeMu        sync.Mutex
+	blitzortungConn bool
 
 	blitzortungURLs = []string{
 		"wss://ws1.blitzortung.org:3000/",
@@ -88,7 +88,7 @@ func blitzortungThread() {
 				}
 				strikeMu.Unlock()
 			}
-			conn.Close()
+			conn.Close() //nolint:errcheck,gosec // G104: connection teardown, error not actionable
 		}
 
 		if didConnect {
@@ -147,9 +147,9 @@ func handleLightning(w http.ResponseWriter, r *http.Request) {
 	strikeMu.Unlock()
 
 	type outStrike struct {
-		Lat   float64 `json:"lat"`
-		Lon   float64 `json:"lon"`
-		AgeS  int     `json:"age_s"`
+		Lat  float64 `json:"lat"`
+		Lon  float64 `json:"lon"`
+		AgeS int     `json:"age_s"`
 	}
 
 	var nearby []outStrike

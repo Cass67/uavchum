@@ -30,14 +30,6 @@ var (
 	callsignRE = regexp.MustCompile(`^[A-Z0-9]{3,8}$`)
 )
 
-func envFlag(name string, def bool) bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
-	if v == "" {
-		return def
-	}
-	return v == "1" || v == "true" || v == "yes" || v == "on"
-}
-
 func isProduction() bool {
 	env := os.Getenv("UAVCHUM_ENV")
 	if env == "" {
