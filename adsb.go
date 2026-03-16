@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -23,6 +24,9 @@ func handleAdsb(w http.ResponseWriter, r *http.Request) {
 	rlat := math.Round(lat*10000) / 10000
 	rlon := math.Round(lon*10000) / 10000
 
+	// All URL hosts are static; path parameters are bounded validated numerics only.
+	// rlat ∈ [-90,90], rlon ∈ [-180,180], radiusNm is a fixed constant.
+	//nolint:gosec // G107: URL hosts are hardcoded; path uses pre-validated float64 values — no SSRF
 	urls := []string{
 		fmt.Sprintf("https://api.adsb.lol/v2/lat/%v/lon/%v/dist/%d", rlat, rlon, radiusNm),
 		fmt.Sprintf("https://api.airplanes.live/v2/point/%v/%v/%d", rlat, rlon, radiusNm),
@@ -32,7 +36,7 @@ func handleAdsb(w http.ResponseWriter, r *http.Request) {
 	ua := "UAVChum/1.0 (uavchum.app)"
 	var raw map[string]interface{}
 	for _, url := range urls {
-		req, err := http.NewRequestWithContext(r.Context(), "GET", url, nil)
+		req, err := http.NewRequestWithContext(r.Context(), "GET", url, nil) //nolint:gosec // G107: see above
 		if err != nil {
 			continue
 		}
@@ -42,7 +46,7 @@ func handleAdsb(w http.ResponseWriter, r *http.Request) {
 			logger.Warn("ADS-B source failed", "url", url, "err", err)
 			continue
 		}
-		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&raw) == nil
+		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&raw) == nil
 		resp.Body.Close()
 		if ok {
 			break

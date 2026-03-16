@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,8 +28,16 @@ var (
 	countryCache sync.Map // key: "lat,lon" → string country code
 )
 
+// ccLowerRE matches exactly two lowercase ASCII letters — guards URL path construction below.
+var ccLowerRE = regexp.MustCompile(`^[a-z]{2}$`)
+
 func fetchOpenAIP(ctx *http.Request, cc string) (data interface{}, wasCached bool, ts *int64) {
 	cc = strings.ToLower(cc)
+	// Re-validate after lowercasing: only two alpha chars may appear in the URL path.
+	if !ccLowerRE.MatchString(cc) { //nolint:gosec // G107: URL host is static GCS bucket; only the 2-letter path segment varies
+		return nil, false, nil
+	}
+
 	now := time.Now()
 	if v, ok := openaipCache.Load(cc); ok {
 		entry := v.(openaipEntry)
@@ -37,22 +47,22 @@ func fetchOpenAIP(ctx *http.Request, cc string) (data interface{}, wasCached boo
 		}
 	}
 
-	url := fmt.Sprintf("https://storage.googleapis.com/29f98e10-a489-4c82-ae5e-489dbcd4912f/%s_asp.geojson", cc)
+	url := fmt.Sprintf("https://storage.googleapis.com/29f98e10-a489-4c82-ae5e-489dbcd4912f/%s_asp.geojson", cc) //nolint:gosec // G107: see above
 	req, err := http.NewRequestWithContext(ctx.Context(), "GET", url, nil)
 	if err != nil {
 		return nil, false, nil
 	}
 	resp, err := httpClient.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		if resp != nil {
-			resp.Body.Close()
-		}
+	if err != nil {
 		return nil, false, nil
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, nil
+	}
 
 	var v interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10*1024*1024)).Decode(&v); err != nil {
 		return nil, false, nil
 	}
 	entry := openaipEntry{data: v, ts: time.Now()}
@@ -81,16 +91,19 @@ func countryFromLatLon(r *http.Request, lat, lon float64) string {
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := httpClient.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 	var body struct {
 		Address struct {
 			CountryCode string `json:"country_code"`
 		} `json:"address"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32*1024)).Decode(&body); err != nil {
 		return ""
 	}
 	cc := strings.ToUpper(body.Address.CountryCode)

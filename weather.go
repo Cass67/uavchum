@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -57,7 +58,11 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequestWithContext(r.Context(), "GET", "https://api.open-meteo.com/v1/forecast", nil)
+	req, err := http.NewRequestWithContext(r.Context(), "GET", "https://api.open-meteo.com/v1/forecast", nil)
+	if err != nil {
+		jsonError(w, "Weather data unavailable", http.StatusInternalServerError)
+		return
+	}
 	q := req.URL.Query()
 	q.Set("latitude", latStr)
 	q.Set("longitude", lonStr)
@@ -78,7 +83,7 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	var data openMeteoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&data); err != nil {
 		jsonError(w, "Unexpected response from weather API", http.StatusBadGateway)
 		return
 	}
@@ -242,11 +247,15 @@ func safeIdxStr(s []string, i int) string {
 
 func jsonOK(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logger.Error("json encode failed", "err", err)
+	}
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		logger.Error("json encode failed", "err", err)
+	}
 }

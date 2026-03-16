@@ -11,5 +11,20 @@ ExecStart=/opt/uavchum/uavchum
 Restart=always
 RestartSec=5
 
+# Systemd sandboxing — matches container hardening in compose.yml
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+
 [Install]
 WantedBy=multi-user.target

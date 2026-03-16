@@ -51,7 +51,6 @@ func handleAviation(w http.ResponseWriter, r *http.Request) {
 		"ids": station, "format": "json", "hours": "6",
 	}); raw != nil {
 		result["metar"] = raw
-		// decode first METAR
 		var metars []metarJSON
 		if json.Unmarshal(mustMarshal(raw), &metars) == nil && len(metars) > 0 {
 			dec := decodeMetar(metars[0])
@@ -103,49 +102,57 @@ func handleAviation(w http.ResponseWriter, r *http.Request) {
 }
 
 // fetchNotams tries NAV Canada → ANB → XML fallback, populating notam_source.
+// Each HTTP response body is closed explicitly before the next source is attempted.
 func fetchNotams(r *http.Request, station string, result map[string]interface{}) []map[string]string {
 	var notams []map[string]string
 
 	// NAV Canada (CY** airports)
 	if strings.HasPrefix(station, "C") {
-		req, _ := http.NewRequestWithContext(r.Context(), "GET",
+		req, err := http.NewRequestWithContext(r.Context(), "GET",
 			"https://plan.navcanada.ca/weather/api/alpha/", nil)
-		req.Header.Set("User-Agent", "UAVChum/1.0")
-		q := req.URL.Query()
-		q.Set("site", station)
-		q.Set("alpha", "notam")
-		req.URL.RawQuery = q.Encode()
+		if err == nil {
+			req.Header.Set("User-Agent", "UAVChum/1.0")
+			q := req.URL.Query()
+			q.Set("site", station)
+			q.Set("alpha", "notam")
+			req.URL.RawQuery = q.Encode()
 
-		if resp, err := httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
-			var body struct {
-				Data []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"data"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&body) == nil {
-				for _, item := range body.Data {
-					if item.Type != "notam" {
-						continue
+			if resp, doErr := httpClient.Do(req); doErr == nil {
+				if resp.StatusCode == http.StatusOK {
+					var body struct {
+						Data []struct {
+							Type string `json:"type"`
+							Text string `json:"text"`
+						} `json:"data"`
 					}
-					raw := item.Text
-					var payload struct {
-						Raw string `json:"raw"`
+					decErr := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&body)
+					resp.Body.Close()
+					if decErr == nil {
+						for _, item := range body.Data {
+							if item.Type != "notam" {
+								continue
+							}
+							raw := item.Text
+							var payload struct {
+								Raw string `json:"raw"`
+							}
+							if json.Unmarshal([]byte(item.Text), &payload) == nil && payload.Raw != "" {
+								raw = payload.Raw
+							}
+							if raw != "" {
+								notams = append(notams, map[string]string{"raw": raw, "source": "NAV CANADA"})
+							}
+						}
+						if len(notams) > 60 {
+							notams = notams[:60]
+						}
+						if len(notams) > 0 {
+							result["notam_source"] = "NAV CANADA"
+							return notams
+						}
 					}
-					if json.Unmarshal([]byte(item.Text), &payload) == nil && payload.Raw != "" {
-						raw = payload.Raw
-					}
-					if raw != "" {
-						notams = append(notams, map[string]string{"raw": raw, "source": "NAV CANADA"})
-					}
-				}
-				if len(notams) > 60 {
-					notams = notams[:60]
-				}
-				if len(notams) > 0 {
-					result["notam_source"] = "NAV CANADA"
-					return notams
+				} else {
+					resp.Body.Close()
 				}
 			}
 		}
@@ -153,37 +160,44 @@ func fetchNotams(r *http.Request, station string, result map[string]interface{})
 
 	// ANB Data (global, no auth)
 	if len(notams) == 0 {
-		req, _ := http.NewRequestWithContext(r.Context(), "GET",
+		req, err := http.NewRequestWithContext(r.Context(), "GET",
 			"https://api.anbdata.com/anb/states/notams/notams-list", nil)
-		req.Header.Set("User-Agent", "UAVChum/1.0")
-		q := req.URL.Query()
-		q.Set("client_id", "test")
-		q.Set("icao_location", station)
-		req.URL.RawQuery = q.Encode()
+		if err == nil {
+			req.Header.Set("User-Agent", "UAVChum/1.0")
+			q := req.URL.Query()
+			q.Set("client_id", "test")
+			q.Set("icao_location", station)
+			req.URL.RawQuery = q.Encode()
 
-		if resp, err := httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
-			var anbList []struct {
-				Location string `json:"location"`
-				All      string `json:"all"`
-				Message  string `json:"message"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&anbList) == nil {
-				for _, n := range anbList {
-					if strings.ToUpper(n.Location) != station {
-						continue
+			if resp, doErr := httpClient.Do(req); doErr == nil {
+				if resp.StatusCode == http.StatusOK {
+					var anbList []struct {
+						Location string `json:"location"`
+						All      string `json:"all"`
+						Message  string `json:"message"`
 					}
-					raw := n.All
-					if raw == "" {
-						raw = n.Message
+					decErr := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&anbList)
+					resp.Body.Close()
+					if decErr == nil {
+						for _, n := range anbList {
+							if strings.ToUpper(n.Location) != station {
+								continue
+							}
+							raw := n.All
+							if raw == "" {
+								raw = n.Message
+							}
+							if raw != "" {
+								notams = append(notams, map[string]string{"raw": raw, "source": "ANB"})
+							}
+						}
+						if len(notams) > 0 {
+							result["notam_source"] = "ANB"
+							return notams
+						}
 					}
-					if raw != "" {
-						notams = append(notams, map[string]string{"raw": raw, "source": "ANB"})
-					}
-				}
-				if len(notams) > 0 {
-					result["notam_source"] = "ANB"
-					return notams
+				} else {
+					resp.Body.Close()
 				}
 			}
 		}
@@ -191,33 +205,39 @@ func fetchNotams(r *http.Request, station string, result map[string]interface{})
 
 	// XML fallback — aviationweather.gov SIGMET/AIRMET data
 	if len(notams) == 0 {
-		req, _ := http.NewRequestWithContext(r.Context(), "GET",
+		req, err := http.NewRequestWithContext(r.Context(), "GET",
 			"https://aviationweather.gov/api/data/dataserver", nil)
-		q := req.URL.Query()
-		q.Set("requestType", "retrieve")
-		q.Set("dataSource", "airsigmets")
-		q.Set("stationString", station)
-		q.Set("hoursBeforeNow", "24")
-		q.Set("format", "xml")
-		req.URL.RawQuery = q.Encode()
+		if err == nil {
+			q := req.URL.Query()
+			q.Set("requestType", "retrieve")
+			q.Set("dataSource", "airsigmets")
+			q.Set("stationString", station)
+			q.Set("hoursBeforeNow", "24")
+			q.Set("format", "xml")
+			req.URL.RawQuery = q.Encode()
 
-		if resp, err := httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 500_000))
-			type airsigmet struct {
-				RawText string `xml:"raw_text"`
-			}
-			type xmlRoot struct {
-				Items []airsigmet `xml:"data>AIRSIGMET"`
-			}
-			var root xmlRoot
-			if xml.Unmarshal(body, &root) == nil {
-				for _, item := range root.Items {
-					if item.RawText != "" && strings.Contains(item.RawText, station) {
-						notams = append(notams, map[string]string{
-							"raw": item.RawText, "source": "AWC SIGMET/AIRMET",
-						})
+			if resp, doErr := httpClient.Do(req); doErr == nil {
+				if resp.StatusCode == http.StatusOK {
+					body, _ := io.ReadAll(io.LimitReader(resp.Body, 500_000))
+					resp.Body.Close()
+					type airsigmet struct {
+						RawText string `xml:"raw_text"`
 					}
+					type xmlRoot struct {
+						Items []airsigmet `xml:"data>AIRSIGMET"`
+					}
+					var root xmlRoot
+					if xml.Unmarshal(body, &root) == nil {
+						for _, item := range root.Items {
+							if item.RawText != "" && strings.Contains(item.RawText, station) {
+								notams = append(notams, map[string]string{
+									"raw": item.RawText, "source": "AWC SIGMET/AIRMET",
+								})
+							}
+						}
+					}
+				} else {
+					resp.Body.Close()
 				}
 			}
 		}
@@ -271,7 +291,7 @@ func abs64(x float64) float64 {
 	return x
 }
 
-// fetchJSON does a GET with query params, decodes as JSON, returns nil on error.
+// fetchJSON does a GET with query params, decodes JSON, returns nil on any error.
 func fetchJSON(r *http.Request, url string, params map[string]string) interface{} {
 	req, err := http.NewRequestWithContext(r.Context(), "GET", url, nil)
 	if err != nil {
@@ -292,7 +312,7 @@ func fetchJSON(r *http.Request, url string, params map[string]string) interface{
 		return nil
 	}
 	var v interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&v); err != nil {
 		return nil
 	}
 	return v

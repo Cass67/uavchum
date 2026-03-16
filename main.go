@@ -53,7 +53,10 @@ func validCountry(s string) bool { return ccRE.MatchString(s) }
 
 func newNonce() string {
 	b := make([]byte, 12)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand is unavailable — fatal: nonces must be unpredictable.
+		panic("crypto/rand unavailable: " + err.Error())
+	}
 	return base64.URLEncoding.EncodeToString(b)
 }
 
@@ -92,7 +95,9 @@ func main() {
 	r.Get("/", handleIndex)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("ok"))
+		if _, err := w.Write([]byte("ok")); err != nil {
+			logger.Error("healthz write failed", "err", err)
+		}
 	})
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 

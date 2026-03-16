@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -20,8 +21,12 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequestWithContext(r.Context(), "GET",
+	req, err := http.NewRequestWithContext(r.Context(), "GET",
 		"https://geocoding-api.open-meteo.com/v1/search", nil)
+	if err != nil {
+		jsonError(w, "Search unavailable", http.StatusInternalServerError)
+		return
+	}
 	qp := req.URL.Query()
 	qp.Set("name", q)
 	qp.Set("count", "10")
@@ -53,7 +58,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 			Timezone    string  `json:"timezone"`
 		} `json:"results"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&body); err != nil {
 		jsonError(w, "Search unavailable", http.StatusBadGateway)
 		return
 	}
@@ -82,8 +87,12 @@ func handleStation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequestWithContext(r.Context(), "GET",
+	req, err := http.NewRequestWithContext(r.Context(), "GET",
 		"https://aviationweather.gov/api/data/airport", nil)
+	if err != nil {
+		jsonError(w, "Station data unavailable", http.StatusInternalServerError)
+		return
+	}
 	q := req.URL.Query()
 	q.Set("ids", station)
 	q.Set("format", "json")
@@ -101,12 +110,14 @@ func handleStation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data []json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || len(data) == 0 {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&data); err != nil || len(data) == 0 {
 		jsonOK(w, map[string]interface{}{})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data[0])
+	if _, err := w.Write(data[0]); err != nil {
+		logger.Error("station write failed", "err", err)
+	}
 }
 
 func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
@@ -116,8 +127,19 @@ func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequestWithContext(r.Context(), "GET",
+	// Re-assert validation immediately before URL construction.
+	// Host is static (api.adsbdb.com); only path segment varies.
+	// callsignRE enforces ^[A-Z0-9]{3,8}$ — no path traversal possible.
+	if !callsignRE.MatchString(callsign) { //nolint:gosec // G107: URL host static; path param validated above
+		jsonOK(w, map[string]interface{}{"found": false})
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), "GET", //nolint:gosec // G107: see above
 		fmt.Sprintf("https://api.adsbdb.com/v0/callsign/%s", callsign), nil)
+	if err != nil {
+		jsonOK(w, map[string]interface{}{"found": false})
+		return
+	}
 	req.Header.Set("User-Agent", "UAVChum/1.0")
 
 	resp, err := httpClient.Do(req)
@@ -143,7 +165,7 @@ func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
 			} `json:"flightroute"`
 		} `json:"response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || body.Response.FlightRoute == nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&body); err != nil || body.Response.FlightRoute == nil {
 		jsonOK(w, map[string]interface{}{"found": false})
 		return
 	}
@@ -155,11 +177,11 @@ func handleFlightRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]interface{}{
-		"found":        true,
+		"found":         true,
 		"callsign_iata": route.CallsignIata,
-		"airline":      airlineName,
-		"origin":       formatAirport(route.Origin),
-		"destination":  formatAirport(route.Destination),
+		"airline":       airlineName,
+		"origin":        formatAirport(route.Origin),
+		"destination":   formatAirport(route.Destination),
 	})
 }
 

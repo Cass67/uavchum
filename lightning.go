@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -174,11 +175,7 @@ func handleLightning(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sort by age ascending (youngest first)
-	for i := 1; i < len(nearby); i++ {
-		for j := i; j > 0 && nearby[j].AgeS < nearby[j-1].AgeS; j-- {
-			nearby[j], nearby[j-1] = nearby[j-1], nearby[j]
-		}
-	}
+	sort.Slice(nearby, func(i, j int) bool { return nearby[i].AgeS < nearby[j].AgeS })
 	if len(nearby) > 500 {
 		nearby = nearby[:500]
 	}
