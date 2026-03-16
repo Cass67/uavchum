@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 func notamPortal(station string) (url, label string) {
@@ -35,6 +36,54 @@ func handleAviation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fan out all upstream calls concurrently — none depend on each other at fetch time.
+	var (
+		rawMetar   interface{}
+		rawTAF     interface{}
+		rawSigmet  interface{}
+		rawPireps  interface{}
+		notams     []map[string]string
+		notamExtra map[string]interface{}
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go func() {
+		defer wg.Done()
+		rawMetar = fetchJSON(r, "https://aviationweather.gov/api/data/metar", map[string]string{
+			"ids": station, "format": "json", "hours": "6",
+		})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawTAF = fetchJSON(r, "https://aviationweather.gov/api/data/taf", map[string]string{
+			"ids": station, "format": "json",
+		})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawSigmet = fetchJSON(r, "https://aviationweather.gov/api/data/airsigmet", map[string]string{
+			"format": "json",
+		})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawPireps = fetchJSON(r, "https://aviationweather.gov/api/data/pirep", map[string]string{
+			"id": station, "format": "json", "distance": "100", "age": "3",
+		})
+	}()
+
+	go func() {
+		defer wg.Done()
+		notams, notamExtra = fetchNotams(r, station)
+	}()
+
+	wg.Wait()
+
 	result := map[string]interface{}{
 		"station":       station,
 		"metar":         []interface{}{},
@@ -45,65 +94,55 @@ func handleAviation(w http.ResponseWriter, r *http.Request) {
 		"notams":        []interface{}{},
 	}
 
-	// METAR
+	// METAR — decode for lat/lon used by SIGMET filtering below.
 	var metarDecoded *MetarDecoded
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/metar", map[string]string{
-		"ids": station, "format": "json", "hours": "6",
-	}); raw != nil {
-		result["metar"] = raw
+	if rawMetar != nil {
+		result["metar"] = rawMetar
 		var metars []metarJSON
-		if json.Unmarshal(mustMarshal(raw), &metars) == nil && len(metars) > 0 {
+		if json.Unmarshal(mustMarshal(rawMetar), &metars) == nil && len(metars) > 0 {
 			dec := decodeMetar(metars[0])
 			metarDecoded = &dec
 			result["metar_decoded"] = dec
 		}
 	}
 
-	// TAF
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/taf", map[string]string{
-		"ids": station, "format": "json",
-	}); raw != nil {
-		result["taf"] = raw
+	if rawTAF != nil {
+		result["taf"] = rawTAF
 	}
 
-	// SIGMET/AIRMET — filter to nearby coords if we have a decoded METAR
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/airsigmet", map[string]string{
-		"format": "json",
-	}); raw != nil {
+	// SIGMET — filter to nearby coords when available.
+	if rawSigmet != nil {
 		if metarDecoded != nil && metarDecoded.Lat != nil && metarDecoded.Lon != nil {
-			slat := *metarDecoded.Lat
-			slon := *metarDecoded.Lon
-			result["airsigmet"] = filterAirsigmets(raw, slat, slon)
+			result["airsigmet"] = filterAirsigmets(rawSigmet, *metarDecoded.Lat, *metarDecoded.Lon)
 		} else {
-			if arr, ok := raw.([]interface{}); ok && len(arr) > 20 {
+			if arr, ok := rawSigmet.([]interface{}); ok && len(arr) > 20 {
 				result["airsigmet"] = arr[:20]
 			} else {
-				result["airsigmet"] = raw
+				result["airsigmet"] = rawSigmet
 			}
 		}
 	}
 
-	// PIREPs
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/pirep", map[string]string{
-		"id": station, "format": "json", "distance": "100", "age": "3",
-	}); raw != nil {
-		if arr, ok := raw.([]interface{}); ok && len(arr) > 20 {
+	if rawPireps != nil {
+		if arr, ok := rawPireps.([]interface{}); ok && len(arr) > 20 {
 			result["pireps"] = arr[:20]
 		} else {
-			result["pireps"] = raw
+			result["pireps"] = rawPireps
 		}
 	}
 
-	// NOTAMs
-	notams := fetchNotams(r, station, result)
 	result["notams"] = notams
+	for k, v := range notamExtra {
+		result[k] = v
+	}
 
 	jsonOK(w, result)
 }
 
-// fetchNotams tries NAV Canada → ANB → XML fallback, populating notam_source.
-// Each HTTP response body is closed explicitly before the next source is attempted.
-func fetchNotams(r *http.Request, station string, result map[string]interface{}) []map[string]string {
+// fetchNotams tries NAV Canada → ANB → XML fallback.
+// Returns the notam list and a map of extra fields to merge into the handler result.
+func fetchNotams(r *http.Request, station string) ([]map[string]string, map[string]interface{}) {
+	extra := map[string]interface{}{}
 	var notams []map[string]string
 
 	// NAV Canada (CY** airports)
@@ -147,8 +186,8 @@ func fetchNotams(r *http.Request, station string, result map[string]interface{})
 							notams = notams[:60]
 						}
 						if len(notams) > 0 {
-							result["notam_source"] = "NAV CANADA"
-							return notams
+							extra["notam_source"] = "NAV CANADA"
+							return notams, extra
 						}
 					}
 				} else {
@@ -192,8 +231,8 @@ func fetchNotams(r *http.Request, station string, result map[string]interface{})
 							}
 						}
 						if len(notams) > 0 {
-							result["notam_source"] = "ANB"
-							return notams
+							extra["notam_source"] = "ANB"
+							return notams, extra
 						}
 					}
 				} else {
@@ -245,14 +284,14 @@ func fetchNotams(r *http.Request, station string, result map[string]interface{})
 
 	if len(notams) == 0 {
 		portalURL, portalLabel := notamPortal(station)
-		result["notam_source"] = "unavailable"
-		result["notam_portal_url"] = portalURL
-		result["notam_portal_label"] = portalLabel
-		result["notams_note"] = "No keyless NOTAM API is available for this region. " +
+		extra["notam_source"] = "unavailable"
+		extra["notam_portal_url"] = portalURL
+		extra["notam_portal_label"] = portalLabel
+		extra["notams_note"] = "No keyless NOTAM API is available for this region. " +
 			"View live NOTAMs at " + portalLabel + "."
 	}
 
-	return notams
+	return notams, extra
 }
 
 // filterAirsigmets keeps alerts within ~5°lat / 8°lon of the station.

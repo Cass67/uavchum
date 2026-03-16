@@ -303,6 +303,83 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 	delta := 1.5
 	bboxEnv := fmt.Sprintf("%f,%f,%f,%f", lon-delta, lat-delta, lon+delta, lat+delta)
 
+	// Fan out all upstream calls concurrently.
+	var (
+		rawAirspace interface{}
+		rawUASFM    interface{}
+		rawTFRs     interface{}
+		rawAirports interface{}
+	)
+
+	country := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("country")))
+	needsLookup := !validCountry(country)
+	var resolvedCountry string
+
+	goroutines := 4
+	if needsLookup {
+		goroutines = 5
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	go func() {
+		defer wg.Done()
+		rawAirspace = fetchJSON(r, "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query",
+			map[string]string{
+				"where":             "CLASS IN ('B','C','D')",
+				"geometry":          bboxEnv,
+				"geometryType":      "esriGeometryEnvelope",
+				"spatialRel":        "esriSpatialRelIntersects",
+				"outFields":         "CLASS,NAME,IDENT,LOWER_VAL,UPPER_VAL,LOWER_UOM,UPPER_UOM,LOWER_CODE,UPPER_CODE",
+				"f":                 "geojson",
+				"resultRecordCount": "100",
+			})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawUASFM = fetchJSON(r, "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/FAA_UAS_FacilityMap_Data_Primary/FeatureServer/0/query",
+			map[string]string{
+				"where":             "1=1",
+				"geometry":          bboxEnv,
+				"geometryType":      "esriGeometryEnvelope",
+				"spatialRel":        "esriSpatialRelIntersects",
+				"outFields":         "CEILING,UNIT,APT1_ICAO,APT1_NAME,AIRSPACE_1",
+				"f":                 "geojson",
+				"resultRecordCount": "200",
+			})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawTFRs = fetchJSON(r, "https://aviationweather.gov/api/data/tfr",
+			map[string]string{"format": "json"})
+	}()
+
+	go func() {
+		defer wg.Done()
+		rawAirports = fetchJSON(r, "https://aviationweather.gov/api/data/metar",
+			map[string]string{
+				"bbox":   fmt.Sprintf("%f,%f,%f,%f", lat-delta, lon-delta, lat+delta, lon+delta),
+				"format": "json",
+				"hours":  "2",
+			})
+	}()
+
+	if needsLookup {
+		go func() {
+			defer wg.Done()
+			resolvedCountry = countryFromLatLon(r, math.Round(lat), math.Round(lon))
+		}()
+	}
+
+	wg.Wait()
+
+	if needsLookup {
+		country = resolvedCountry
+	}
+
 	result := map[string]interface{}{
 		"airspace": []interface{}{},
 		"tfrs":     []interface{}{},
@@ -311,17 +388,8 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// FAA Class B/C/D
-	if raw := fetchJSON(r, "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query",
-		map[string]string{
-			"where":              "CLASS IN ('B','C','D')",
-			"geometry":           bboxEnv,
-			"geometryType":       "esriGeometryEnvelope",
-			"spatialRel":         "esriSpatialRelIntersects",
-			"outFields":          "CLASS,NAME,IDENT,LOWER_VAL,UPPER_VAL,LOWER_UOM,UPPER_UOM,LOWER_CODE,UPPER_CODE",
-			"f":                  "geojson",
-			"resultRecordCount":  "100",
-		}); raw != nil {
-		if obj, ok := raw.(map[string]interface{}); ok {
+	if rawAirspace != nil {
+		if obj, ok := rawAirspace.(map[string]interface{}); ok {
 			if features, ok := obj["features"].([]interface{}); ok {
 				for _, f := range features {
 					if feat, ok := f.(map[string]interface{}); ok {
@@ -341,25 +409,15 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// FAA UAS Facility Map (LAANC)
-	if raw := fetchJSON(r, "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/FAA_UAS_FacilityMap_Data_Primary/FeatureServer/0/query",
-		map[string]string{
-			"where":             "1=1",
-			"geometry":          bboxEnv,
-			"geometryType":      "esriGeometryEnvelope",
-			"spatialRel":        "esriSpatialRelIntersects",
-			"outFields":         "CEILING,UNIT,APT1_ICAO,APT1_NAME,AIRSPACE_1",
-			"f":                 "geojson",
-			"resultRecordCount": "200",
-		}); raw != nil {
-		if obj, ok := raw.(map[string]interface{}); ok {
+	if rawUASFM != nil {
+		if obj, ok := rawUASFM.(map[string]interface{}); ok {
 			result["uasfm"] = obj["features"]
 		}
 	}
 
 	// TFRs
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/tfr",
-		map[string]string{"format": "json"}); raw != nil {
-		if arr, ok := raw.([]interface{}); ok {
+	if rawTFRs != nil {
+		if arr, ok := rawTFRs.([]interface{}); ok {
 			var nearby []interface{}
 			for _, t := range arr {
 				obj, ok := t.(map[string]interface{})
@@ -383,14 +441,9 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Nearby airports via METAR bbox
-	if raw := fetchJSON(r, "https://aviationweather.gov/api/data/metar",
-		map[string]string{
-			"bbox":   fmt.Sprintf("%f,%f,%f,%f", lat-delta, lon-delta, lat+delta, lon+delta),
-			"format": "json",
-			"hours":  "2",
-		}); raw != nil {
-		if arr, ok := raw.([]interface{}); ok {
+	// Nearby airports
+	if rawAirports != nil {
+		if arr, ok := rawAirports.([]interface{}); ok {
 			seen := map[string]bool{}
 			var airports []map[string]interface{}
 			for _, m := range arr {
@@ -408,21 +461,21 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 				seen[mj.IcaoId] = true
 				dm := decodeMetar(mj)
 				airports = append(airports, map[string]interface{}{
-					"icao":         mj.IcaoId,
-					"name":         mj.Name,
-					"lat":          mj.Lat,
-					"lon":          mj.Lon,
-					"elev":         dm.ElevFt,
-					"flight_cat":   dm.FlightCat,
-					"wind_dir":     dm.WindDir,
+					"icao":          mj.IcaoId,
+					"name":          mj.Name,
+					"lat":           mj.Lat,
+					"lon":           mj.Lon,
+					"elev":          dm.ElevFt,
+					"flight_cat":    dm.FlightCat,
+					"wind_dir":      dm.WindDir,
 					"wind_speed_kt": dm.WindSpeedKt,
-					"wind_gust_kt": dm.WindGustKt,
-					"visibility":   dm.Visibility,
-					"temp_c":       dm.TempC,
-					"clouds":       dm.Clouds,
-					"wx_string":    dm.WxString,
-					"raw":          dm.Raw,
-					"time":         dm.Time,
+					"wind_gust_kt":  dm.WindGustKt,
+					"visibility":    dm.Visibility,
+					"temp_c":        dm.TempC,
+					"clouds":        dm.Clouds,
+					"wx_string":     dm.WxString,
+					"raw":           dm.Raw,
+					"time":          dm.Time,
 				})
 				if len(airports) >= 40 {
 					break
@@ -430,12 +483,6 @@ func handleAirspace(w http.ResponseWriter, r *http.Request) {
 			}
 			result["airports"] = airports
 		}
-	}
-
-	// OpenAIP
-	country := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("country")))
-	if !validCountry(country) {
-		country = countryFromLatLon(r, math.Round(lat), math.Round(lon))
 	}
 
 	nowTS := time.Now().Unix()
