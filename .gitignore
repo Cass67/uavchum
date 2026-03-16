@@ -1,4 +1,4 @@
-# Python
+# Python (legacy — kept during Go migration)
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,6 +6,12 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# Go
+uavchum
+uavchum-go
+*.test
+*.out
 
 # Local artifacts
 gunicorn.ctl
@@ -35,7 +41,4 @@ docs/*
 # Deploy (host-specific)
 deploy/inventory.ini
 
-# tests
-
 scripts/*
-

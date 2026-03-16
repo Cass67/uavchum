@@ -1,40 +1,49 @@
 #!/usr/bin/env bash
-# UAVChum — server setup (Rocky Linux 8/9)
-# Run as root on a fresh VPS, then follow the Cloudflare steps below.
+# UAVChum — server setup (Rocky Linux 8/9, bare-metal / no container)
+# Run as root on a fresh VPS, then follow the Cloudflare steps in deploy/cloudflare.md.
 set -euo pipefail
 
 APP_DIR=/opt/uavchum
 APP_USER=uavchum
+GO_VERSION=1.23.5
 
-# ── System deps ─────────────────────────────────────────────────────
+# ── System deps ──────────────────────────────────────────────────────
 dnf update -q -y
-dnf install -y python3 python3-pip
+dnf install -y wget tar
 
-# ── App user ────────────────────────────────────────────────────────
-id "$APP_USER" &>/dev/null || useradd --system --no-create-home --shell /bin/false "$APP_USER"
-
-# ── Deploy app files ─────────────────────────────────────────────────
-
-mkdir -p "$APP_DIR"
-# rsync -a --exclude '.git' --exclude '__pycache__' ./ "$APP_DIR/"
-
-# ── Python venv ─────────────────────────────────────────────────────
-python3 -m venv "$APP_DIR/.venv"
-"$APP_DIR/.venv/bin/pip" install --upgrade pip -q
-"$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt" -q
-
-# ── Environment file ────────────────────────────────────────────────
-if [ ! -f "$APP_DIR/.env" ]; then
-    SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    echo "SECRET_KEY=$SECRET" > "$APP_DIR/.env"
-    chmod 600 "$APP_DIR/.env"
-    echo "Generated SECRET_KEY in $APP_DIR/.env"
+# ── Install Go ───────────────────────────────────────────────────────
+if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go${GO_VERSION}"; then
+    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm /tmp/go.tar.gz
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go
 fi
 
-# ── Permissions ─────────────────────────────────────────────────────
+# ── App user ─────────────────────────────────────────────────────────
+id "$APP_USER" &>/dev/null || useradd --system --no-create-home --shell /bin/false "$APP_USER"
+
+# ── Deploy app files ──────────────────────────────────────────────────
+mkdir -p "$APP_DIR"
+# rsync -a --exclude '.git' --exclude '*.test' ./ "$APP_DIR/"
+
+# ── Build binary ─────────────────────────────────────────────────────
+(cd "$APP_DIR" && /usr/local/go/bin/go build -ldflags="-s -w" -o uavchum .)
+
+# ── Environment file ─────────────────────────────────────────────────
+if [ ! -f "$APP_DIR/.env" ]; then
+    cat > "$APP_DIR/.env" <<'EOF'
+UAVCHUM_ENV=production
+TUNNEL_TOKEN=replace-with-your-cloudflare-tunnel-token
+EOF
+    chmod 600 "$APP_DIR/.env"
+    echo "Created $APP_DIR/.env — edit TUNNEL_TOKEN before starting the tunnel."
+fi
+
+# ── Permissions ──────────────────────────────────────────────────────
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-# ── Systemd service ─────────────────────────────────────────────────
+# ── Systemd service ──────────────────────────────────────────────────
 cp "$APP_DIR/deploy/uavchum.service" /etc/systemd/system/uavchum.service
 systemctl daemon-reload
 systemctl enable uavchum

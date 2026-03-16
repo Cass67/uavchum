@@ -1,21 +1,29 @@
-FROM python:3.14-slim
+# ── Build stage ───────────────────────────────────────────────────────────────
+FROM golang:1.23-alpine AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+WORKDIR /build
 
-RUN useradd --system --no-create-home --shell /bin/false uavchum
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY *.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uavchum .
+
+# ── Runtime stage ─────────────────────────────────────────────────────────────
+FROM alpine:3.21
+
+RUN addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app.py gunicorn.conf.py ./
-COPY static/ static/
+COPY --from=builder /build/uavchum .
+COPY static/    static/
 COPY templates/ templates/
 
-USER uavchum
+USER app
 
 EXPOSE 5555
 
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "--bind", "0.0.0.0:5555", "app:app"]
+ENV PORT=5555
+
+CMD ["./uavchum"]
