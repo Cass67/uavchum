@@ -1,0 +1,149 @@
+repos:
+
+# repo-guard:base:start
+  - repo: local
+    hooks:
+      - id: risky-filenames
+        name: risky filenames
+        entry: bash -lc 'status=0; for f in "$@"; do case "$f" in .env|.env.*|*.env|*env*|*.local|*.secret|*.secrets|*.token|*.tokens|*.pem|*.key|*.p12|*.pfx|*.crt|*.csr|*.ovpn|*.asc|*.kdbx|*.sqlite|*.sqlite3|*.db|*.rdb|*.bak|*.backup|*.gpg|*.age|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|known_hosts|authorized_keys|auth.json|auth.json.*|credentials|credentials.*|secrets|secrets.*|.npmrc|.pypirc|.netrc|.docker/config.json|.envrc|.aws/*|.ssh/*|.gnupg/*|.config/*|Library/Keychains/*|Library/Application\ Support/Google/Chrome/*|Library/Application\ Support/Chromium/*|Library/Application\ Support/BraveSoftware/*|Library/Application\ Support/Firefox/*|history.jsonl|sessions/*|log/*) printf "refusing risky path=%s\n" "$f"; status=1 ;; esac; done; exit "$status"' --
+        language: system
+      - id: merge-conflict
+        name: merge conflict markers
+        entry: bash -lc 'if [ "$#" -eq 0 ]; then exit 0; fi; rg -n -- "^(<<<<<<<|=======|>>>>>>>)" "$@"; status=$?; if [ "$status" -eq 1 ]; then exit 0; fi; exit "$status"'
+        language: system
+        types: [text]
+      - id: trailing-whitespace
+        name: trailing whitespace
+        entry: bash -lc 'if [ "$#" -eq 0 ]; then exit 0; fi; rg -n -- "[[:blank:]]$" "$@"; status=$?; if [ "$status" -eq 1 ]; then exit 0; fi; exit "$status"'
+        language: system
+        types: [text]
+      - id: detect-private-key
+        name: private key markers
+        entry: bash -lc 'if [ "$#" -eq 0 ]; then exit 0; fi; rg -n -- "-----BEGIN ([A-Z0-9 ]+ )?PRIVATE KEY-----" "$@"; status=$?; if [ "$status" -eq 1 ]; then exit 0; fi; exit "$status"'
+        language: system
+        types: [text]
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks git --pre-commit --staged --redact
+        language: system
+        pass_filenames: false
+# repo-guard:base:end
+
+# repo-guard:python:start
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then "$VIRTUAL_ENV/bin/ruff" check --fix "$@"; elif [ -x ./.venv/bin/ruff ]; then ./.venv/bin/ruff check --fix "$@"; elif [ -x ./venv/bin/ruff ]; then ./venv/bin/ruff check --fix "$@"; else ruff check --fix "$@"; fi' --
+        language: system
+        files: \.pyi?$
+      - id: ruff-format
+        name: ruff format
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then "$VIRTUAL_ENV/bin/ruff" format "$@"; elif [ -x ./.venv/bin/ruff ]; then ./.venv/bin/ruff format "$@"; elif [ -x ./venv/bin/ruff ]; then ./venv/bin/ruff format "$@"; else ruff format "$@"; fi' --
+        language: system
+        files: \.pyi?$
+      - id: bandit
+        name: bandit
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/bandit" ]; then "$VIRTUAL_ENV/bin/bandit" -q "$@"; elif [ -x ./.venv/bin/bandit ]; then ./.venv/bin/bandit -q "$@"; elif [ -x ./venv/bin/bandit ]; then ./venv/bin/bandit -q "$@"; else bandit -q "$@"; fi' --
+        language: system
+        files: \.pyi?$
+      - id: radon-cc
+        name: radon complexity
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/radon" ]; then "$VIRTUAL_ENV/bin/radon" cc -s -n B "$@"; elif [ -x ./.venv/bin/radon ]; then ./.venv/bin/radon cc -s -n B "$@"; elif [ -x ./venv/bin/radon ]; then ./venv/bin/radon cc -s -n B "$@"; else radon cc -s -n B "$@"; fi' --
+        language: system
+        files: \.pyi?$
+      - id: vulture
+        name: vulture dead code
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/vulture" ]; then "$VIRTUAL_ENV/bin/vulture" --min-confidence 80 "$@"; elif [ -x ./.venv/bin/vulture ]; then ./.venv/bin/vulture --min-confidence 80 "$@"; elif [ -x ./venv/bin/vulture ]; then ./venv/bin/vulture --min-confidence 80 "$@"; else vulture --min-confidence 80 "$@"; fi' --
+        language: system
+        files: \.pyi?$
+# repo-guard:python:end
+
+# repo-guard:go:start
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: bash -lc 'gofmt -w "$@"'
+        language: system
+        files: \.go$
+      - id: goimports
+        name: goimports
+        entry: bash -lc 'goimports -w "$@"'
+        language: system
+        files: \.go$
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        files: \.go$
+        pass_filenames: false
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run
+        language: system
+        files: \.go$
+        pass_filenames: false
+      - id: govulncheck
+        name: govulncheck
+        entry: govulncheck ./...
+        language: system
+        files: \.go$
+        pass_filenames: false
+# repo-guard:go:end
+
+# repo-guard:bash:start
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -w -i 2 -ci
+        language: system
+        files: \.(sh|bash)$
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: \.(sh|bash)$
+      - id: bash-syntax
+        name: bash syntax
+        entry: bash -n
+        language: system
+        files: \.(sh|bash)$
+# repo-guard:bash:end
+
+# repo-guard:javascript:start
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -lc 'if [ -x ./node_modules/.bin/eslint ]; then ./node_modules/.bin/eslint "$@"; else eslint "$@"; fi' --
+        language: system
+        files: \.(js|jsx|mjs|cjs)$
+      - id: prettier
+        name: prettier
+        entry: bash -lc 'if [ -x ./node_modules/.bin/prettier ]; then ./node_modules/.bin/prettier --write "$@"; else prettier --write "$@"; fi' --
+        language: system
+        files: \.(js|jsx|mjs|cjs|json|md|yaml|yml)$
+# repo-guard:javascript:end
+
+# repo-guard:ansible:start
+  - repo: local
+    hooks:
+      - id: yamllint
+        name: yamllint
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/yamllint" ]; then "$VIRTUAL_ENV/bin/yamllint" "$@"; elif [ -x ./.venv/bin/yamllint ]; then ./.venv/bin/yamllint "$@"; elif [ -x ./venv/bin/yamllint ]; then ./venv/bin/yamllint "$@"; else yamllint "$@"; fi' --
+        language: system
+        files: \.(ya?ml)$
+      - id: ansible-lint
+        name: ansible-lint
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ansible-lint" ]; then "$VIRTUAL_ENV/bin/ansible-lint" .; elif [ -x ./.venv/bin/ansible-lint ]; then ./.venv/bin/ansible-lint .; elif [ -x ./venv/bin/ansible-lint ]; then ./venv/bin/ansible-lint .; else ansible-lint .; fi' --
+        language: system
+        files: \.(ya?ml|j2|jinja2)$
+        pass_filenames: false
+      - id: djlint
+        name: djlint
+        entry: bash -lc 'if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/djlint" ]; then "$VIRTUAL_ENV/bin/djlint" --check "$@"; elif [ -x ./.venv/bin/djlint ]; then ./.venv/bin/djlint --check "$@"; elif [ -x ./venv/bin/djlint ]; then ./venv/bin/djlint --check "$@"; else djlint --check "$@"; fi' --
+        language: system
+        files: \.(j2|jinja2)$
+# repo-guard:ansible:end

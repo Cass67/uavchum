@@ -1,4 +1,4 @@
-.PHONY: build run lint vet vuln clean docker-build deploy
+.PHONY: build run lint vet vuln clean docker-build deploy bench-branches
 
 BUILD_FLAGS := -ldflags="-s -w"
 BINARY      := uavchum
@@ -26,3 +26,6 @@ docker-build:
 
 deploy:
 	ansible-playbook deploy/deploy.yml
+
+bench-branches:
+	./scripts/benchmark_branches.sh main HEAD

@@ -1,48 +1,6 @@
-# Python (legacy — kept during Go migration)
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.venv/
-venv/
-*.egg-info/
-
-# Go
-uavchum
-uavchum-go
-*.test
-*.out
-
-# Local artifacts
-gunicorn.ctl
-uavchum.png
-
-# Env
+# Secret-bearing files and directories: exclude from default search/read flows.
 .env
 .env.*
-
-# Logs
-*.log
-
-# macOS
-.DS_Store
-
-# IDE
-.idea/
-.vscode/
-
-# AI tooling
-.claude/
-.sisyphus
-
-# Docs
-docs/*
-
-# Deploy (host-specific)
-deploy/inventory.ini
-
-scripts/*
-# Secret-bearing files and directories: never commit these by default.
 *.env
 *env*
 *.local
@@ -99,6 +57,7 @@ sessions/
 log/
 
 # OS and editor workspace noise.
+.DS_Store
 .AppleDouble
 .LSOverride
 ._*
@@ -112,6 +71,8 @@ $RECYCLE.BIN/
 .fseventsd/
 .TemporaryItems/
 .Trash-*/
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
