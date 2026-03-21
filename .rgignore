@@ -1,45 +1,6 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.venv/
-venv/
-*.egg-info/
-
-# Local artifacts
-gunicorn.ctl
-uavchum.png
-
-# Env
+# Keep ripgrep aligned with the default secret-exclusion policy.
 .env
 .env.*
-
-# Logs
-*.log
-
-# macOS
-.DS_Store
-
-# IDE
-.idea/
-.vscode/
-
-# AI tooling
-.claude/
-.sisyphus
-
-# Docs
-docs/*
-
-# Deploy (host-specific)
-deploy/inventory.ini
-
-# tests
-
-scripts/*
-
-# Secret-bearing files and directories: never commit these by default.
 *.env
 *env*
 *.local
@@ -96,6 +57,7 @@ sessions/
 log/
 
 # OS and editor workspace noise.
+.DS_Store
 .AppleDouble
 .LSOverride
 ._*
@@ -109,6 +71,8 @@ $RECYCLE.BIN/
 .fseventsd/
 .TemporaryItems/
 .Trash-*/
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
