@@ -15,7 +15,7 @@ services:
     networks:
       - skynet
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5555/')"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:5555/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

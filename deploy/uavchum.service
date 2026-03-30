@@ -7,9 +7,24 @@ Type=simple
 User=uavchum
 WorkingDirectory=/opt/uavchum
 EnvironmentFile=/opt/uavchum/.env
-ExecStart=/opt/uavchum/.venv/bin/gunicorn -c gunicorn.conf.py app:app
+ExecStart=/opt/uavchum/uavchum
 Restart=always
 RestartSec=5
+
+# Systemd sandboxing — matches container hardening in compose.yml
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target

@@ -2,7 +2,7 @@
 
 **Weather & Aviation Intelligence — no API keys required.**
 
-UAVChum is a Flask web app that brings together weather forecasts, drone flight assessments, and aviation data (METARs, TAFs, NOTAMs, SIGMETs) into a single clean interface. Everything runs off free, open data sources.
+UAVChum is a Go web app that brings together weather forecasts, drone flight assessments, and aviation data (METARs, TAFs, NOTAMs, SIGMETs) into a single clean interface. Everything runs off free, open data sources.
 
 ---
 
@@ -13,6 +13,7 @@ UAVChum is a Flask web app that brings together weather forecasts, drone flight 
 - 24-hour hourly scroll
 - 7-day forecast
 - Interactive location map
+
 ### Drone
 - Go / Marginal / No-Go flight assessment based on live weather
 - 24-hour fly window with per-hour colour coding
@@ -24,7 +25,7 @@ UAVChum is a Flask web app that brings together weather forecasts, drone flight 
   - **TFRs** — active Temporary Flight Restrictions
   - **Airport advisory circles** — proximity warnings worldwide
 - Data sources panel showing feature counts, live vs cached status, and last fetch time
-- Local drone laws tile — links to the official regulator for US, CA, AU, NZ, and UK; falls back to drone-laws.com for all other countries
+- Local drone laws tile — links to the official regulator for US, CA, AU, NZ, and UK
 
 ### Aviation
 - METAR with full decode (flight category, wind, visibility, ceiling, altimeter)
@@ -44,6 +45,8 @@ UAVChum is a Flask web app that brings together weather forecasts, drone flight 
 | [OpenAIP](https://www.openaip.net) | EU/global airspace (cached 24 h) |
 | [FAA ArcGIS](https://adds-faa.opendata.arcgis.com) | US Class B/C/D airspace & LAANC grids |
 | [aviationweather.gov](https://aviationweather.gov) | METARs, TAFs, SIGMETs, PIREPs, TFRs |
+| [Blitzortung](https://www.blitzortung.org) | Real-time lightning strikes |
+| [ADS-B Exchange / adsb.lol](https://adsb.lol) | Live aircraft traffic |
 
 No accounts, no API keys, no rate-limit tokens needed.
 
@@ -51,13 +54,10 @@ No accounts, no API keys, no rate-limit tokens needed.
 
 ## Requirements
 
-- Python 3.11+
-- Dependencies in `requirements.txt`
-
-Install dependencies:
+- Go 1.23+
 
 ```bash
-pip install -r requirements.txt
+go mod download
 ```
 
 ---
@@ -65,42 +65,72 @@ pip install -r requirements.txt
 ## Running
 
 ```bash
-python app.py
+go run .
+```
+
+Or build and run:
+
+```bash
+go build -o uavchum .
+./uavchum
 ```
 
 Then open [http://localhost:5555](http://localhost:5555).
 
+---
+
 ## Security Posture
 
-The browser assets are now served locally:
+Browser assets are served locally — no CDN dependencies:
 
-- Leaflet is loaded from repo-local static files instead of `unpkg`
-- Weather Icons are loaded from repo-local static files instead of `cdnjs`
-- External web fonts were removed
+- Leaflet loaded from repo-local static files
+- Weather Icons loaded from repo-local static files
 
-Flask production defaults are also tighter:
+Go server security defaults:
 
-- `SESSION_COOKIE_SECURE` is environment-aware instead of always forced on
-- optional host-header validation is supported with `TRUSTED_HOSTS`
-- CSP no longer permits third-party script/style/font CDNs
+- Strict CSP with per-request nonces (no `unsafe-inline` for scripts)
+- `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, HSTS in production
+- All API inputs validated with regex before use
+- Rate limiting per IP: 2 req/s burst + per-endpoint per-minute limits
+- `read_only` container filesystem, all capabilities dropped, `no-new-privileges`
 
 For production behind Cloudflare Tunnel, set:
 
 ```bash
-TRUSTED_HOSTS=your-domain.example,uavchum.your-domain.example
+UAVCHUM_ENV=production
 ```
 
-### Container (Docker/Podman)
+---
 
-This repo supports two container workflows:
+## Development
+
+```bash
+# Lint (requires golangci-lint)
+make lint
+
+# Static analysis
+make vet
+
+# Vulnerability scan (requires govulncheck)
+make vuln
+```
+
+Install tools:
+
+```bash
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+go install golang.org/x/vuln/cmd/govulncheck@latest
+```
+
+---
+
+## Container (Docker/Podman)
 
 #### Local container run (no tunnel)
 
-Build and run the app container, publishing port **5555** to the host:
-
 ```bash
 docker build -t uavchum:local .
-docker run --rm -it -p 5555:5555 -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')" uavchum:local
+docker run --rm -it -p 5555:5555 -e UAVCHUM_ENV=production uavchum:local
 ```
 
 Then open [http://localhost:5555](http://localhost:5555).
@@ -135,27 +165,19 @@ Running `podman ps` may print errors like:
 
 ```
 ERRO[0000] Refreshing container <id>: acquiring lock 1 for container <id>: file exists
-ERRO[0000] Refreshing pod <id>: retrieving lock 0 for pod <id>: file exists
 ```
 
-**Why this happens.** Podman is daemonless — every `podman` command starts fresh and re-syncs
-container state from scratch (the "refresh" step). Per-container lock files live in `/run/user/$UID/`
-(a tmpfs). The persistent database lives on disk. On reboot or SSH logout, systemd-logind destroys
-`/run/user/$UID/` for rootless users with no active session, wiping the lock files. On the next
-command, Podman finds lock slot IDs in its database but the backing files are gone → `file exists`
-from the inconsistent lock manager state. The containers themselves are unaffected; this is a
-known upstream bug ([#16784](https://github.com/containers/podman/issues/16784)).
+**Why this happens.** Podman is daemonless — systemd-logind destroys `/run/user/$UID/` on logout,
+wiping lock files. The containers themselves are unaffected; this is a known upstream bug
+([#16784](https://github.com/containers/podman/issues/16784)).
 
-**Permanent fix — enable linger for the deploy user** (run once on the Rocky host):
+**Permanent fix** (run once on the Rocky host):
 
 ```bash
 loginctl enable-linger $USER
 ```
 
-This keeps `/run/user/$UID/` alive indefinitely, even with no active SSH session, so lock files
-survive across logouts and reboots.
-
-**Immediate recovery** (clears stale state on a running system):
+**Immediate recovery:**
 
 ```bash
 podman system renumber
@@ -168,28 +190,35 @@ podman compose down && podman compose up -d
 
 ```
 .
-├── app.py              # Flask backend & API routes
-├── requirements.txt    # Python dependencies
-├── Dockerfile          # Container build
+├── main.go             # Server, routing, startup
+├── middleware.go       # CSP nonce, security headers
+├── decode.go           # WMO codes, METAR decode, drone assessment
+├── weather.go          # /api/weather
+├── aviation.go         # /api/aviation (METAR/TAF/NOTAM/SIGMET/PIREP)
+├── airspace.go         # /api/airspace + OpenAIP cache
+├── adsb.go             # /api/adsb
+├── lightning.go        # Blitzortung goroutine + /api/lightning
+├── search.go           # /api/search, /api/station, /api/flightroute
+├── go.mod / go.sum
+├── Dockerfile          # Multi-stage: builder + alpine runtime (~20 MB image)
 ├── compose.yml         # App + cloudflared tunnel sidecar
+├── Makefile            # build / lint / vet / vuln / deploy
+├── .golangci.yml       # Linter config
 ├── deploy/
 │   ├── deploy.yml      # Ansible deploy playbook
 │   ├── inventory.ini   # Ansible inventory (rocky host)
 │   ├── cloudflare.md   # Rollout instructions
-│   ├── setup.sh        # Non-container setup
-│   └── uavchum.service
+│   ├── setup.sh        # Bare-metal setup (no container)
+│   └── uavchum.service # systemd unit
 ├── static/
 │   ├── app.js          # Frontend logic
-│   ├── style.css       # Styles
+│   ├── style.css
 │   ├── sw.js           # Service worker
 │   └── manifest.json
 └── templates/
     └── index.html      # Single-page app shell
 ```
 
-
 ## Live Site
-
-You can use this site today
 
 https://uavchum.hehaw.net/

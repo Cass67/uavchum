@@ -20,10 +20,10 @@
         cmd: >
           tar -czf {{ archive }}
           --exclude='.git'
-          --exclude='__pycache__'
-          --exclude='*.pyc'
+          --exclude='uavchum'
+          --exclude='uavchum-go'
+          --exclude='*.test'
           --exclude='.env'
-          --exclude='uavchum.tar'
           --exclude='uavchum.png'
           --exclude='*.md'
           --exclude='docs'
