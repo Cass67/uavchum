@@ -25,6 +25,34 @@ function toTemp(c) {
 }
 function tempUnit() { return units.temp === 'C' ? '°C' : '°F'; }
 
+function weatherCacheKey(lat, lon) {
+    const la = Number.parseFloat(lat);
+    const lo = Number.parseFloat(lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    return `weather:${la.toFixed(4)},${lo.toFixed(4)}`;
+}
+
+function saveCachedWeather(lat, lon, payload) {
+    const key = weatherCacheKey(lat, lon);
+    if (!key || !payload) return;
+    try {
+        localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), payload }));
+    } catch {}
+}
+
+function loadCachedWeather(lat, lon) {
+    const key = weatherCacheKey(lat, lon);
+    if (!key) return null;
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.payload || null;
+    } catch {
+        return null;
+    }
+}
+
 /* ── Drone assessment ──────────────────────────────────────────── */
 const DRONE_THRESHOLDS = {
     mini:     { windCaution: 20, windDanger: 30, gustCaution: 25, gustDanger: 38 },
@@ -401,45 +429,64 @@ async function loadLocation(lat, lon, name, country, elev, countryName) {
         const wx = await wxPromise;
         if (!wx || wx.error) throw new Error(wx?.error || 'Weather unavailable');
 
-        currentWxData = wx;
-        const dr = assessDrone(wx, droneClass);
-        renderHero(wx, dr, name);
-        renderHourly(wx.hourly, dr.hourly);
-        renderForecast(wx.forecast);
-        renderDaylight(wx.forecast, wx.timezone);
-        renderDroneFactors(dr.factors);
-        renderChecklist();
-
-        $('#mainContent').classList.remove('hidden');
-        setTimeout(() => setupDroneMap(currentLat, currentLon, name), 20);
+        renderWeatherState(wx, name);
+        saveCachedWeather(lat, lon, wx);
 
         $('#nfzLoading').classList.remove('hidden');
         const as = await asPromise;
-        renderAirspaceOnMap(as);
-        renderAirports(as.airports || []);
-        updateVisibilityCeiling(as.airports || []);
-        renderSources(as.sources);
-        startAdsbRefresh();
-        startLightningRefresh();
-
-        // Auto-load aviation briefing for nearest airport
-        const nearestAirport = (as.airports || [])
-            .filter(ap => ap.lat && ap.lon)
-            .map(ap => ({ ...ap, _nm: distNm(currentLat, currentLon, ap.lat, ap.lon) }))
-            .sort((a, b) => a._nm - b._nm)[0];
-        if (nearestAirport?.icao) loadAviationBriefing(nearestAirport.icao);
+        renderAirspaceState(as);
 
     } catch (err) {
         console.error('loadLocation error:', err);
-        $('#mainError').querySelector('p').textContent =
-            err.message && err.message !== 'Failed to fetch'
-                ? err.message
-                : 'Unable to load weather data. Check your connection and try again.';
-        $('#mainError').classList.remove('hidden');
+        const cachedWx = loadCachedWeather(lat, lon);
+        if (cachedWx?.current) {
+            renderWeatherState(cachedWx, name);
+            $('#mainError').querySelector('p').textContent = 'Live weather unavailable. Showing the last saved conditions for this location.';
+            $('#mainError').classList.remove('hidden');
+
+            $('#nfzLoading').classList.remove('hidden');
+            const as = await asPromise;
+            renderAirspaceState(as);
+        } else {
+            $('#mainError').querySelector('p').textContent =
+                err.message && err.message !== 'Failed to fetch'
+                    ? err.message
+                    : 'Unable to load weather data. Check your connection and try again.';
+            $('#mainError').classList.remove('hidden');
+        }
     } finally {
         $('#mainLoading').classList.add('hidden');
         $('#nfzLoading').classList.add('hidden');
     }
+}
+
+function renderWeatherState(wx, name) {
+    currentWxData = wx;
+    const dr = assessDrone(wx, droneClass);
+    renderHero(wx, dr, name);
+    renderHourly(wx.hourly, dr.hourly);
+    renderForecast(wx.forecast);
+    renderDaylight(wx.forecast, wx.timezone);
+    renderDroneFactors(dr.factors);
+    renderChecklist();
+    $('#mainContent').classList.remove('hidden');
+    setTimeout(() => setupDroneMap(currentLat, currentLon, name), 20);
+    return dr;
+}
+
+function renderAirspaceState(as) {
+    renderAirspaceOnMap(as);
+    renderAirports(as.airports || []);
+    updateVisibilityCeiling(as.airports || []);
+    renderSources(as.sources);
+    startAdsbRefresh();
+    startLightningRefresh();
+
+    const nearestAirport = (as.airports || [])
+        .filter(ap => ap.lat && ap.lon)
+        .map(ap => ({ ...ap, _nm: distNm(currentLat, currentLon, ap.lat, ap.lon) }))
+        .sort((a, b) => a._nm - b._nm)[0];
+    if (nearestAirport?.icao) loadAviationBriefing(nearestAirport.icao);
 }
 
 /* ── Hero ──────────────────────────────────────────────────────── */

@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 )
 
 // open-meteo API response shapes
@@ -48,6 +53,27 @@ type openMeteoResponse struct {
 	Elevation float64 `json:"elevation"`
 }
 
+type weatherCacheEntry struct {
+	body      []byte
+	fetchedAt time.Time
+}
+
+type weatherCall struct {
+	done  chan struct{}
+	entry weatherCacheEntry
+	err   error
+}
+
+var (
+	weatherCache         sync.Map
+	weatherInflight      sync.Map
+	weatherNow           = time.Now
+	weatherCacheFreshTTL = 5 * time.Minute
+	weatherCacheStaleTTL = 30 * time.Minute
+	weatherRetryDelay    = 200 * time.Millisecond
+	weatherMaxAttempts   = 2
+)
+
 func handleWeather(w http.ResponseWriter, r *http.Request) {
 	latStr := r.URL.Query().Get("lat")
 	lonStr := r.URL.Query().Get("lon")
@@ -58,10 +84,81 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), "GET", "https://api.open-meteo.com/v1/forecast", nil)
-	if err != nil {
-		jsonError(w, "Weather data unavailable", http.StatusInternalServerError)
+	cacheKey := weatherCacheKey(lat, lon)
+	if entry, ok := loadWeatherCache(cacheKey, weatherNow(), weatherCacheFreshTTL); ok {
+		writeWeatherResponse(w, entry)
 		return
+	}
+
+	entry, err := fetchWeatherEntry(r.Context(), cacheKey, latStr, lonStr, lat, lon)
+	if err != nil {
+		logger.Error("weather fetch failed", "lat", lat, "lon", lon, "err", err)
+		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
+		return
+	}
+	writeWeatherResponse(w, entry)
+}
+
+func fetchWeatherEntry(ctx context.Context, cacheKey, latStr, lonStr string, lat, lon float64) (weatherCacheEntry, error) {
+	now := weatherNow()
+	if entry, ok := loadWeatherCache(cacheKey, now, weatherCacheFreshTTL); ok {
+		return entry, nil
+	}
+
+	call := &weatherCall{done: make(chan struct{})}
+	actual, loaded := weatherInflight.LoadOrStore(cacheKey, call)
+	if loaded {
+		inflight := actual.(*weatherCall)
+		select {
+		case <-ctx.Done():
+			return weatherCacheEntry{}, ctx.Err()
+		case <-inflight.done:
+			return inflight.entry, inflight.err
+		}
+	}
+	defer func() {
+		close(call.done)
+		weatherInflight.Delete(cacheKey)
+	}()
+
+	entry, err := fetchWeatherFromUpstream(ctx, latStr, lonStr, lat, lon)
+	if err == nil {
+		weatherCache.Store(cacheKey, entry)
+		call.entry = entry
+		return entry, nil
+	}
+
+	if stale, ok := loadWeatherCache(cacheKey, now, weatherCacheStaleTTL); ok {
+		call.entry = stale
+		return stale, nil
+	}
+
+	call.err = err
+	return weatherCacheEntry{}, err
+}
+
+func fetchWeatherFromUpstream(ctx context.Context, latStr, lonStr string, lat, lon float64) (weatherCacheEntry, error) {
+	var lastErr error
+	for attempt := 1; attempt <= weatherMaxAttempts; attempt++ {
+		data, err := requestOpenMeteo(ctx, latStr, lonStr, lat, lon)
+		if err == nil {
+			return buildWeatherEntry(data, lat, lon)
+		}
+		lastErr = err
+		if attempt == weatherMaxAttempts || !isTransientWeatherError(err) {
+			break
+		}
+		if sleepErr := sleepWithContext(ctx, weatherRetryDelay); sleepErr != nil {
+			return weatherCacheEntry{}, sleepErr
+		}
+	}
+	return weatherCacheEntry{}, lastErr
+}
+
+func requestOpenMeteo(ctx context.Context, latStr, lonStr string, lat, lon float64) (openMeteoResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.open-meteo.com/v1/forecast", nil)
+	if err != nil {
+		return openMeteoResponse{}, err
 	}
 	q := req.URL.Query()
 	q.Set("latitude", latStr)
@@ -73,25 +170,25 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 	q.Set("wind_speed_unit", "kn")
 	q.Set("forecast_hours", "24")
 	req.URL.RawQuery = q.Encode()
+	req.Header.Set("User-Agent", "UAVChum/1.0")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.Error("weather API error", "lat", lat, "lon", lon, "err", err)
-		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
-		return
+		return openMeteoResponse{}, err
 	}
 	defer resp.Body.Close() //nolint:errcheck,gosec // G104: close errors not actionable after body read
 	if resp.StatusCode != http.StatusOK {
-		jsonError(w, "Weather data unavailable", http.StatusBadGateway)
-		return
+		return openMeteoResponse{}, weatherUpstreamError{status: resp.StatusCode}
 	}
 
 	var data openMeteoResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&data); err != nil {
-		jsonError(w, "Unexpected response from weather API", http.StatusBadGateway)
-		return
+		return openMeteoResponse{}, err
 	}
+	return data, nil
+}
 
+func buildWeatherEntry(data openMeteoResponse, lat, lon float64) (weatherCacheEntry, error) {
 	c := data.Current
 	wmo := decodeWMO(c.WeatherCode)
 
@@ -194,8 +291,14 @@ func handleWeather(w http.ResponseWriter, r *http.Request) {
 		"elevation": data.Elevation,
 		"drone":     assessDrone(wd),
 	}
-
-	jsonOK(w, result)
+	body, err := json.Marshal(result)
+	if err != nil {
+		return weatherCacheEntry{}, err
+	}
+	return weatherCacheEntry{
+		body:      body,
+		fetchedAt: weatherNow(),
+	}, nil
 }
 
 // buildHourlyOutput returns the hourly array in the same shape as the Python.
@@ -261,5 +364,61 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.WriteHeader(code)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
 		logger.Error("json encode failed", "err", err)
+	}
+}
+
+type weatherUpstreamError struct {
+	status int
+}
+
+func (e weatherUpstreamError) Error() string {
+	return fmt.Sprintf("weather upstream status %d", e.status)
+}
+
+func weatherCacheKey(lat, lon float64) string {
+	return fmt.Sprintf("%.4f,%.4f", lat, lon)
+}
+
+func loadWeatherCache(key string, now time.Time, maxAge time.Duration) (weatherCacheEntry, bool) {
+	value, ok := weatherCache.Load(key)
+	if !ok {
+		return weatherCacheEntry{}, false
+	}
+	entry := value.(weatherCacheEntry)
+	if now.Sub(entry.fetchedAt) > maxAge {
+		return weatherCacheEntry{}, false
+	}
+	return entry, true
+}
+
+func writeWeatherResponse(w http.ResponseWriter, entry weatherCacheEntry) {
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(entry.body); err != nil {
+		logger.Error("weather write failed", "err", err)
+	}
+}
+
+func isTransientWeatherError(err error) bool {
+	var upstreamErr weatherUpstreamError
+	if errors.As(err, &upstreamErr) {
+		return upstreamErr.status == http.StatusTooManyRequests ||
+			upstreamErr.status == http.StatusBadGateway ||
+			upstreamErr.status == http.StatusServiceUnavailable ||
+			upstreamErr.status == http.StatusGatewayTimeout
+	}
+	return true
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
