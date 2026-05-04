@@ -503,7 +503,7 @@ function renderHero(d, dr, name) {
     $('#wind').textContent          = `${c.wind_dir} ${toWind(c.wind_speed)} ${windUnit()}`;
     $('#gusts').textContent         = `${toWind(c.wind_gusts)} ${windUnit()}`;
     $('#humidity').textContent      = c.humidity;
-    $('#pressure').textContent      = Math.round(c.pressure);
+    $('#pressure').textContent      = c.pressure == null ? '—' : Math.round(c.pressure);
     $('#cloudCover').textContent    = c.cloud_cover ?? '—';
     $('#heroCard').querySelector('.hero-bg').className = 'hero-bg ' + (c.group || 'clear');
 

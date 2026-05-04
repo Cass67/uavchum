@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM golang:1.23-alpine AS builder
+FROM golang:1.23 AS builder
 
 WORKDIR /build
 
@@ -10,9 +10,11 @@ COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uavchum .
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM oraclelinux:10-slim
 
-RUN addgroup -S app && adduser -S app -G app
+RUN microdnf upgrade -y && microdnf clean all
+
+RUN groupadd -r app && useradd -r -g app app
 
 WORKDIR /app
 
