@@ -53,6 +53,9 @@ func newNonce() string {
 }
 
 func main() {
+	loadDotEnv()
+	loadTurnstileConfig()
+
 	httpClient = &http.Client{
 		Timeout: 30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -96,6 +99,8 @@ func main() {
 	// API routes — global 2/s burst + per-endpoint limits
 	r.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(2, time.Second))
+		r.Use(requireTurnstile)
+		r.Get("/api/turnstile/session", handleTurnstileSession)
 		r.With(httprate.LimitByIP(60, time.Minute)).Get("/api/search", handleSearch)
 		r.With(httprate.LimitByIP(30, time.Minute)).Get("/api/weather", handleWeather)
 		r.With(httprate.LimitByIP(20, time.Minute)).Get("/api/aviation", handleAviation)
@@ -129,7 +134,10 @@ func main() {
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	nonce := r.Context().Value(ctxNonce).(string)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "index.html", struct{ CspNonce string }{nonce}); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "index.html", struct {
+		CspNonce         string
+		TurnstileSiteKey string
+	}{nonce, turnstileSiteKey}); err != nil {
 		logger.Error("template execute failed", "err", err)
 	}
 }

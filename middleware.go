@@ -38,11 +38,11 @@ func securityHeaders(next http.Handler) http.Handler {
 				"base-uri 'none'; "+
 				"object-src 'none'; "+
 				"frame-ancestors 'none'; "+
-				"frame-src 'none'; "+
+				"frame-src https://challenges.cloudflare.com; "+
 				"form-action 'self'; "+
 				"manifest-src 'self'; "+
 				"worker-src 'self'; "+
-				"script-src 'self' 'nonce-%s'; "+
+				"script-src 'self' 'nonce-%s' https://challenges.cloudflare.com; "+
 				"script-src-attr 'none'; "+
 				"style-src 'self'; "+
 				"style-src-attr 'unsafe-inline'; "+
@@ -51,7 +51,8 @@ func securityHeaders(next http.Handler) http.Handler {
 				"https://*.basemaps.cartocdn.com "+
 				"https://tilecache.rainviewer.com; "+
 				"connect-src 'self' https://nominatim.openstreetmap.org "+
-				"https://*.basemaps.cartocdn.com https://api.rainviewer.com",
+				"https://*.basemaps.cartocdn.com https://api.rainviewer.com "+
+				"https://challenges.cloudflare.com",
 			nonce,
 		)
 		if isSecure {

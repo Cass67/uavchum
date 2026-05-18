@@ -13,11 +13,11 @@ dnf install -y wget tar
 
 # ── Install Go ───────────────────────────────────────────────────────
 if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go${GO_VERSION}"; then
-    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf /tmp/go.tar.gz
-    rm /tmp/go.tar.gz
-    ln -sf /usr/local/go/bin/go /usr/local/bin/go
+  wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+  rm -rf /usr/local/go
+  tar -C /usr/local -xzf /tmp/go.tar.gz
+  rm /tmp/go.tar.gz
+  ln -sf /usr/local/go/bin/go /usr/local/bin/go
 fi
 
 # ── App user ─────────────────────────────────────────────────────────
@@ -32,12 +32,15 @@ mkdir -p "$APP_DIR"
 
 # ── Environment file ─────────────────────────────────────────────────
 if [ ! -f "$APP_DIR/.env" ]; then
-    cat > "$APP_DIR/.env" <<'EOF'
+  cat >"$APP_DIR/.env" <<'EOF'
 UAVCHUM_ENV=production
 TUNNEL_TOKEN=replace-with-your-cloudflare-tunnel-token
+# Cloudflare Turnstile keys — add your real keys here
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
 EOF
-    chmod 600 "$APP_DIR/.env"
-    echo "Created $APP_DIR/.env — edit TUNNEL_TOKEN before starting the tunnel."
+  chmod 600 "$APP_DIR/.env"
+  echo "Created $APP_DIR/.env — edit TUNNEL_TOKEN before starting the tunnel."
 fi
 
 # ── Permissions ──────────────────────────────────────────────────────

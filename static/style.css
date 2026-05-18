@@ -824,3 +824,12 @@ body {
     .hero-temp { font-size: 2.8rem; }
     .hero-chips { grid-template-columns: 1fr 1fr; }
 }
+
+.turnstile-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 6px 12px;
+}
+.turnstile-wrap .cf-turnstile {
+    min-height: 65px;
+}

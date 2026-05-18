@@ -8,7 +8,7 @@
     <title>UAVChum</title>
     <link rel="stylesheet" href="/static/vendor/weather-icons/css/weather-icons.min.css">
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
-    <link rel="stylesheet" href="/static/style.css?v=15">
+    <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 <div class="app">
@@ -78,6 +78,14 @@
             <div id="searchResults" class="search-results hidden"></div>
         </div>
     </div>
+    {{if .TurnstileSiteKey}}
+    <div class="turnstile-wrap">
+        <div class="cf-turnstile"
+             data-sitekey="{{.TurnstileSiteKey}}"
+             data-size="compact"
+             data-callback="turnstileSuccessCallback"></div>
+    </div>
+    {{end}}
 
     <div id="mainLoading" class="loading hidden">
         <div class="spinner"></div><span>Fetching weather &amp; airspace…</span>
@@ -381,7 +389,10 @@
 
 </div><!-- /.app -->
 
-<script src="/static/vendor/leaflet/leaflet.js"></script>
-<script nonce="{{.CspNonce}}" src="/static/app.js?v=27"></script>
+<script src="/static/vendor/leaflet/leaflet.js" data-cfasync="false"></script>
+<script nonce="{{.CspNonce}}" src="/static/app.js?v=28" data-cfasync="false"></script>
+{{if .TurnstileSiteKey}}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer data-cfasync="false"></script>
+{{end}}
 </body>
 </html>

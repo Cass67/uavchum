@@ -7,6 +7,66 @@ let currentElevation = null;
 let currentWxData    = null;
 let _adsbTimer       = null;
 let _lightningTimer  = null;
+let _turnstileSessionReady = false;
+let _turnstileSessionPromise = null;
+let _pendingRestoreLocation = null;
+
+if (window._turnstileToken) {
+    // token pre-loaded by inline script before app.js loaded
+}
+window.turnstileSuccessCallback = function (token) {
+    window._turnstileToken = token;
+    _turnstileSessionPromise = null;
+    ensureTurnstileSession()
+        .then(loadPendingRestoreLocation)
+        .catch(e => console.error('turnstile session error', e));
+};
+
+function loadPendingRestoreLocation() {
+    if (!_pendingRestoreLocation) return;
+    const loc = _pendingRestoreLocation;
+    _pendingRestoreLocation = null;
+    loadLocation(loc.lat, loc.lon, loc.name, loc.country, loc.elev, loc.countryName);
+}
+
+async function ensureTurnstileSession() {
+    if (_turnstileSessionReady || !window._turnstileToken) return;
+    if (!_turnstileSessionPromise) {
+        _turnstileSessionPromise = fetchApi('/api/turnstile/session', {
+            forceTurnstileToken: true,
+            skipTurnstileSession: true,
+        }).then(() => {
+            _turnstileSessionReady = true;
+            window._turnstileToken = "";
+        }).finally(() => {
+            _turnstileSessionPromise = null;
+        });
+    }
+    await _turnstileSessionPromise;
+}
+
+async function fetchApi(url, options = {}) {
+    if (!options.skipTurnstileSession) {
+        await ensureTurnstileSession();
+    }
+    const headers = {};
+    if (window._turnstileToken && (options.forceTurnstileToken || !_turnstileSessionReady)) {
+        headers["X-Turnstile-Token"] = window._turnstileToken;
+    }
+    const resp = await fetch(url, { headers });
+    let payload = null;
+    try { payload = await resp.json(); } catch (e) { /* ignore */ }
+    if (!resp.ok) {
+        if (resp.status === 403 && payload?.error && /turnstile/i.test(payload.error)) {
+            window._turnstileToken = "";
+            _turnstileSessionReady = false;
+            _turnstileSessionPromise = null;
+            try { turnstile.reset(); } catch (e) { /* ignore */ }
+        }
+        throw new Error(payload?.error || `Request failed: ${resp.status}`);
+    }
+    return payload || {};
+}
 
 const units = {
     wind: localStorage.getItem('windUnit') || 'kn',
@@ -286,7 +346,7 @@ const distNm = (a, b, c, d) => distKm(a, b, c, d) * 0.539957;
 
     async function doSearch(q) {
         try {
-            const data = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+            const data = await fetchApi(`/api/search?q=${encodeURIComponent(q)}`);
             results.replaceChildren();
             if (!data.length || data.error) {
                 const empty = document.createElement('div');
@@ -344,7 +404,16 @@ const distNm = (a, b, c, d) => distKm(a, b, c, d) * 0.539957;
                 });
             }
             results.classList.remove('hidden');
-        } catch (e) { console.error('search error', e); }
+        } catch (e) {
+            results.replaceChildren();
+            const errDiv = document.createElement('div');
+            errDiv.className = 'sr-item sr-empty';
+            errDiv.textContent = /turnstile/i.test(e.message)
+                ? 'Please complete the verification challenge to search.'
+                : 'Search unavailable. Try again.';
+            results.appendChild(errDiv);
+            results.classList.remove('hidden');
+        }
     }
 })();
 
@@ -352,28 +421,38 @@ const distNm = (a, b, c, d) => distKm(a, b, c, d) * 0.539957;
 (function restoreOnLoad() {
     const p = new URLSearchParams(window.location.search);
     if (p.has('lat') && p.has('lon')) {
-        loadLocation(
-            p.get('lat'), p.get('lon'),
-            p.get('name') || 'Saved location',
-            p.get('cc') || '',
-            p.get('elev') || null,
-            p.get('cn') || ''
-        );
+        const loc = {
+            lat: p.get('lat'),
+            lon: p.get('lon'),
+            name: p.get('name') || 'Saved location',
+            country: p.get('cc') || '',
+            elev: p.get('elev') || null,
+            countryName: p.get('cn') || '',
+        };
+        if (document.querySelector('.cf-turnstile') && !window._turnstileToken && !_turnstileSessionReady) {
+            _pendingRestoreLocation = loc;
+        } else {
+            loadLocation(loc.lat, loc.lon, loc.name, loc.country, loc.elev, loc.countryName);
+        }
         return;
     }
     const saved = localStorage.getItem('lastLocation');
     if (!saved) return;
+    if (document.querySelector('.cf-turnstile') && !window._turnstileToken) {
+        return;
+    }
     try {
         const l = JSON.parse(saved);
         if (l.lat && l.lon) {
-            loadLocation(
-                l.lat,
-                l.lon,
-                l.name || 'Last location',
-                l.country || '',
-                l.elev ?? null,
-                l.countryName || ''
-            );
+            const loc = {
+                lat: l.lat,
+                lon: l.lon,
+                name: l.name || 'Last location',
+                country: l.country || '',
+                elev: l.elev ?? null,
+                countryName: l.countryName || '',
+            };
+            loadLocation(loc.lat, loc.lon, loc.name, loc.country, loc.elev, loc.countryName);
         }
     } catch {}
 })();
@@ -422,8 +501,8 @@ async function loadLocation(lat, lon, name, country, elev, countryName) {
     $('#sourcesCard').classList.add('hidden');
 
     const airspaceUrl  = `/api/airspace?lat=${lat}&lon=${lon}${currentCountry ? '&country=' + encodeURIComponent(currentCountry) : ''}`;
-    const wxPromise    = fetch(`/api/weather?lat=${lat}&lon=${lon}`).then(r => r.json()).catch(() => null);
-    const asPromise    = fetch(airspaceUrl).then(r => r.json()).catch(() => ({}));
+    const wxPromise    = fetchApi(`/api/weather?lat=${lat}&lon=${lon}`).catch(() => null);
+    const asPromise    = fetchApi(airspaceUrl).catch(() => ({}));
 
     try {
         const wx = await wxPromise;
@@ -450,7 +529,9 @@ async function loadLocation(lat, lon, name, country, elev, countryName) {
         } else {
             $('#mainError').querySelector('p').textContent =
                 err.message && err.message !== 'Failed to fetch'
-                    ? err.message
+                    ? (/turnstile/i.test(err.message)
+                        ? 'Please complete the verification challenge above to load location data.'
+                        : err.message)
                     : 'Unable to load weather data. Check your connection and try again.';
             $('#mainError').classList.remove('hidden');
         }
@@ -883,7 +964,7 @@ async function loadAviationBriefing(icao) {
     $('#aviationLoading').classList.remove('hidden');
     $('#aviationContent').classList.add('hidden');
     try {
-        const d = await fetch(`/api/aviation?station=${encodeURIComponent(icao.toUpperCase())}`).then(r => r.json());
+        const d = await fetchApi(`/api/aviation?station=${encodeURIComponent(icao.toUpperCase())}`);
         renderAviation(d);
     } catch (e) { console.error(e); }
     finally { $('#aviationLoading').classList.add('hidden'); }
@@ -2114,9 +2195,7 @@ async function renderAdsbLayer() {
     droneLayerGroups.adsb = L.layerGroup();
 
     try {
-        const resp = await fetch(`/api/adsb?lat=${currentLat}&lon=${currentLon}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
+        const data = await fetchApi(`/api/adsb?lat=${currentLat}&lon=${currentLon}`);
         (data.aircraft || []).forEach(ac => {
             if (ac.lat == null || ac.lon == null) return;
             const hdg  = ac.heading ?? 0;
@@ -2196,7 +2275,7 @@ async function lookupFlightRoute(callsign, popupEl) {
     routeDiv.replaceChildren();
     routeDiv.appendChild(el('span', 'adsb-route-loading', 'Looking up…'));
     try {
-        const d = await fetch(`/api/flightroute?callsign=${encodeURIComponent(callsign)}`).then(r => r.json());
+        const d = await fetchApi(`/api/flightroute?callsign=${encodeURIComponent(callsign)}`);
         if (!d.found || !d.origin?.iata) {
             routeDiv.replaceChildren();
             routeDiv.appendChild(el('span', 'adsb-route-none', 'Route unknown'));
@@ -2230,9 +2309,7 @@ async function renderLightningLayer() {
     droneLayerGroups.lightning = L.layerGroup();
 
     try {
-        const resp = await fetch(`/api/lightning?lat=${currentLat}&lon=${currentLon}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
+        const data = await fetchApi(`/api/lightning?lat=${currentLat}&lon=${currentLon}`);
 
         (data.strikes || []).forEach(s => {
             const age = s.age_s;
