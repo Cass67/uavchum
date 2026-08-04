@@ -47,6 +47,22 @@
 
   handlers:
     - name: Restart stack
-      ansible.builtin.shell:
-        cmd: podman compose build --no-cache && podman compose up -d --force-recreate
+      ansible.builtin.shell: |
+        podman compose build --no-cache && \
+        podman compose up -d --force-recreate
         chdir: "{{ app_dir }}"
+
+  post_tasks:
+    - name: Install uavchum-stack user systemd service
+      ansible.builtin.copy:
+        src: uavchum-stack.service
+        dest: "{{ app_dir }}/../.config/systemd/user/uavchum-stack.service"
+        mode: "0644"
+
+    - name: Reload user systemd
+      ansible.builtin.shell: systemctl --user daemon-reload
+      changed_when: true
+
+    - name: Enable and start uavchum-stack user service
+      ansible.builtin.shell: systemctl --user enable --now uavchum-stack
+      changed_when: true

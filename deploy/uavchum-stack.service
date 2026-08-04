@@ -1,0 +1,14 @@
+[Unit]
+Description=UAVChum Podman Compose Stack
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/uavchum
+ExecStart=/home/cass/.local/bin/podman-compose -f compose.yml up -d
+ExecStop=/home/cass/.local/bin/podman-compose -f compose.yml down
+
+[Install]
+WantedBy=default.target
