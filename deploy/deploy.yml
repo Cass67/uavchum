@@ -36,7 +36,6 @@
         src: "{{ archive }}"
         dest: "{{ app_dir }}"
         remote_src: false
-      notify: Restart stack
 
     - name: Remove local archive
       ansible.builtin.file:
@@ -45,14 +44,15 @@
       delegate_to: localhost
       changed_when: false
 
-  handlers:
-    - name: Restart stack
-      ansible.builtin.shell: |
-        podman compose build --no-cache && \
-        podman compose up -d --force-recreate
-        chdir: "{{ app_dir }}"
-
   post_tasks:
+    - name: Rebuild image and restart stack
+      ansible.builtin.shell:
+        cmd: |
+          podman compose build --no-cache && \
+          podman compose up -d --force-recreate
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
     - name: Install uavchum-stack user systemd service
       ansible.builtin.copy:
         src: uavchum-stack.service
@@ -60,9 +60,13 @@
         mode: "0644"
 
     - name: Reload user systemd
-      ansible.builtin.shell: systemctl --user daemon-reload
-      changed_when: true
+      ansible.builtin.systemd:
+        daemon_reload: true
+        scope: user
 
     - name: Enable and start uavchum-stack user service
-      ansible.builtin.shell: systemctl --user enable --now uavchum-stack
-      changed_when: true
+      ansible.builtin.systemd:
+        name: uavchum-stack
+        enabled: true
+        state: started
+        scope: user
