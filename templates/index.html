@@ -392,6 +392,10 @@
 <script src="/static/vendor/leaflet/leaflet.js" data-cfasync="false"></script>
 <script nonce="{{.CspNonce}}" src="/static/app.js?v=28" data-cfasync="false"></script>
 {{if .TurnstileSiteKey}}
+<!-- Cloudflare ships Turnstile's api.js continuously and publishes no SRI
+     hash for it; pinning an integrity digest here would break the widget the
+     next time they update it. -->
+<!-- nosemgrep: html.security.audit.missing-integrity.missing-integrity -->
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer data-cfasync="false"></script>
 {{end}}
 </body>

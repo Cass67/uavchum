@@ -115,6 +115,10 @@ func handleStation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// Upstream JSON relayed verbatim under an explicit application/json type,
+	// and securityHeaders sets X-Content-Type-Options: nosniff globally, so a
+	// browser cannot be talked into rendering this as HTML.
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 	if _, err := w.Write(data[0]); err != nil {
 		logger.Error("station write failed", "err", err)
 	}

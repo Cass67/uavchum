@@ -840,6 +840,9 @@ func loadWeatherCache(key string, now time.Time, maxAge time.Duration) (weatherC
 
 func writeWeatherResponse(w http.ResponseWriter, entry weatherCacheEntry) {
 	w.Header().Set("Content-Type", "application/json")
+	// Cached upstream JSON, explicit application/json, and nosniff is set for
+	// every response by securityHeaders -- not an HTML rendering path.
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 	if _, err := w.Write(entry.body); err != nil {
 		logger.Error("weather write failed", "err", err)
 	}
