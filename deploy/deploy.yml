@@ -9,6 +9,20 @@
     archive: /tmp/uavchum-deploy.tar.gz
 
   tasks:
+    # The archive is built from the working tree, so refuse to ship anything
+    # that is not exactly origin/main and passing tests.
+    - name: Refuse to deploy uncommitted, unpushed or failing code
+      ansible.builtin.shell:
+        chdir: "{{ playbook_dir }}/.."
+        cmd: >
+          git diff --quiet HEAD &&
+          test -z "$(git status --porcelain)" &&
+          git fetch -q origin main &&
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+          go test ./...
+      delegate_to: localhost
+      changed_when: false
+
     - name: Ensure app directory exists
       ansible.builtin.file:
         path: "{{ app_dir }}"

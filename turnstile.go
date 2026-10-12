@@ -22,6 +22,7 @@ const (
 var (
 	turnstileSiteKey   string
 	turnstileSecretKey string
+	turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 )
 
 func loadTurnstileConfig() {
@@ -37,7 +38,7 @@ func verifyTurnstileToken(token string) bool {
 		"secret":   turnstileSecretKey,
 		"response": token,
 	})
-	req, err := http.NewRequest("POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", turnstileVerifyURL, bytes.NewReader(body))
 	if err != nil {
 		return false
 	}
