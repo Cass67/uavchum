@@ -103,14 +103,15 @@ func setTurnstileSessionCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTurnstileSession(w http.ResponseWriter, r *http.Request) {
-	// Token already validated by requireTurnstile, which set the session cookie.
+	// Reached only through requireTurnstile, so arriving here already proves a
+	// valid session cookie. The body just lets the frontend confirm it.
 	jsonOK(w, map[string]bool{"ok": true})
 }
 
 // handleTurnstileVerify exchanges a one-time Turnstile token for the signed
-// session cookie that unlocks the data endpoints. It sits outside the
-// requireTurnstile group: it is the only route that accepts a raw token, so the
-// token stays out of query strings and cookies of data requests.
+// session cookie that unlocks the data endpoints. It is deliberately the only
+// route that accepts a raw token, and it is the only way to obtain a session:
+// the cookie gate never honours a token, so nothing else can borrow one.
 func handleTurnstileVerify(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("X-Turnstile-Token")
 	if token == "" {
