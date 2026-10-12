@@ -51,6 +51,9 @@ async function fetchApi(url, options = {}) {
         await ensureTurnstileSession();
     }
     const headers = {};
+    if (options.forceTurnstileToken && window._turnstileToken) {
+        headers["X-Turnstile-Token"] = window._turnstileToken;
+    }
     const resp = await fetch(url, {
         method: options.method || 'GET',
         headers,
