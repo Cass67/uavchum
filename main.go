@@ -25,6 +25,8 @@ var (
 	tmpl       *template.Template
 	logger     = slog.Default()
 
+	cartoBasemapsKey string
+
 	icaoRE     = regexp.MustCompile(`^[A-Z][A-Z0-9]{2,3}$`)
 	ccRE       = regexp.MustCompile(`^[A-Z]{2}$`)
 	callsignRE = regexp.MustCompile(`^[A-Z0-9]{3,8}$`)
@@ -55,6 +57,7 @@ func newNonce() string {
 func main() {
 	loadDotEnv()
 	loadTurnstileConfig()
+	cartoBasemapsKey = loadCartoBasemapsKey(dotEnvPaths())
 
 	httpClient = &http.Client{
 		Timeout: 30 * time.Second,
@@ -137,7 +140,8 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := tmpl.ExecuteTemplate(w, "index.html", struct {
 		CspNonce         string
 		TurnstileSiteKey string
-	}{nonce, turnstileSiteKey}); err != nil {
+		CartoBasemapsKey string
+	}{nonce, turnstileSiteKey, cartoBasemapsKey}); err != nil {
 		logger.Error("template execute failed", "err", err)
 	}
 }

@@ -1154,7 +1154,11 @@ function renderAviation(d) {
 }
 
 /* ── Map constants ─────────────────────────────────────────────── */
-const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+// CARTO requires an API key on basemap tiles since Oct 2026. The key is injected
+// by the page as window.UAVCHUM_CARTO_KEY (public, restricted to our origin).
+const CARTO_KEY  = window.UAVCHUM_CARTO_KEY || '';
+const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+    + (CARTO_KEY ? '?key=' + encodeURIComponent(CARTO_KEY) : '');
 const TILE_ATTR  = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>';
 const RADAR_ATTR = 'Radar © <a href="https://www.rainviewer.com">RainViewer</a>';
 

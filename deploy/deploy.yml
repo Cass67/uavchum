@@ -59,6 +59,16 @@
         dest: "{{ app_dir }}/../.config/systemd/user/uavchum-stack.service"
         mode: "0644"
 
+    - name: Wait for the app to answer
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:5555/healthz"
+      delegate_to: rocky
+      register: health
+      until: health.status == 200
+      retries: 10
+      delay: 3
+      changed_when: false
+
     - name: Reload user systemd
       ansible.builtin.systemd:
         daemon_reload: true

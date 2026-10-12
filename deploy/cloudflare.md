@@ -45,9 +45,18 @@ cat > /home/cass/uavchum/.env << EOF
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 TUNNEL_TOKEN=paste-your-tunnel-token-here
 TRUSTED_HOSTS=uavchum.example.com
+TURNSTILE_SITE_KEY=paste-your-site-key-here
+TURNSTILE_SECRET_KEY=paste-your-secret-key-here
+CARTO_BASERMAPS_KEY=paste-your-carto-basemaps-key-here
 EOF
 chmod 600 /home/cass/uavchum/.env
 ```
+
+`SECRET_KEY` and `TRUSTED_HOSTS` are leftovers from the old Python app; the Go
+server ignores them. `CARTO_BASERMAPS_KEY` is required for map tiles — grab a
+free key at <https://carto.com/basemaps/apikey/> and restrict it to your
+hostname. The deploy playbook never overwrites `.env`, so add the key by hand
+when it is missing.
 
 ### 4. Deploy
 
@@ -106,10 +115,10 @@ cloudflared tunnel create uavchum
 
 ## Cloudflare dashboard settings
 
-| Setting | Value |
-|---------|-------|
-| SSL/TLS mode | Full |
-| Always Use HTTPS | On |
-| Cache Rules | Bypass `/api/*`, cache `/static/*` |
-| Rate Limiting | Add a rule for `/api/*` at 100 req/min to supplement app-level limits |
-| Bot Fight Mode | On |
+| Setting          | Value                                                                 |
+| ---------------- | --------------------------------------------------------------------- |
+| SSL/TLS mode     | Full                                                                  |
+| Always Use HTTPS | On                                                                    |
+| Cache Rules      | Bypass `/api/*`, cache `/static/*`                                    |
+| Rate Limiting    | Add a rule for `/api/*` at 100 req/min to supplement app-level limits |
+| Bot Fight Mode   | On                                                                    |
