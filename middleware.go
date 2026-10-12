@@ -7,6 +7,18 @@ import (
 	"strings"
 )
 
+// noDirListing turns http.FileServer's automatic index pages into 404s, so
+// /static/ cannot be browsed to enumerate the app's assets.
+func noDirListing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if path := r.URL.Path; path == "/" || strings.HasSuffix(path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func nonceMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nonce := newNonce()

@@ -32,7 +32,8 @@ function loadPendingRestoreLocation() {
 async function ensureTurnstileSession() {
     if (_turnstileSessionReady || !window._turnstileToken) return;
     if (!_turnstileSessionPromise) {
-        _turnstileSessionPromise = fetchApi('/api/turnstile/session', {
+        _turnstileSessionPromise = fetchApi('/api/turnstile/verify', {
+            method: 'POST',
             forceTurnstileToken: true,
             skipTurnstileSession: true,
         }).then(() => {
@@ -50,10 +51,11 @@ async function fetchApi(url, options = {}) {
         await ensureTurnstileSession();
     }
     const headers = {};
-    if (window._turnstileToken && (options.forceTurnstileToken || !_turnstileSessionReady)) {
-        headers["X-Turnstile-Token"] = window._turnstileToken;
-    }
-    const resp = await fetch(url, { headers });
+    const resp = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        credentials: 'same-origin',
+    });
     let payload = null;
     try { payload = await resp.json(); } catch (e) { /* ignore */ }
     if (!resp.ok) {

@@ -97,13 +97,17 @@ func main() {
 			logger.Error("healthz write failed", "err", err)
 		}
 	})
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	r.Handle("/static/*", noDirListing(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
+
+	// Token exchange runs before the session gate: it turns a one-time Turnstile
+	// token into the signed session cookie the data endpoints require.
+	r.With(httprate.LimitByIP(10, time.Minute)).Post("/api/turnstile/verify", handleTurnstileVerify)
+	r.Get("/api/turnstile/session", handleTurnstileSession)
 
 	// API routes — global 2/s burst + per-endpoint limits
 	r.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(2, time.Second))
 		r.Use(requireTurnstile)
-		r.Get("/api/turnstile/session", handleTurnstileSession)
 		r.With(httprate.LimitByIP(60, time.Minute)).Get("/api/search", handleSearch)
 		r.With(httprate.LimitByIP(30, time.Minute)).Get("/api/weather", handleWeather)
 		r.With(httprate.LimitByIP(20, time.Minute)).Get("/api/aviation", handleAviation)

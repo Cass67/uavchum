@@ -103,6 +103,26 @@ func setTurnstileSessionCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTurnstileSession(w http.ResponseWriter, r *http.Request) {
+	// Token already validated by requireTurnstile, which set the session cookie.
+	jsonOK(w, map[string]bool{"ok": true})
+}
+
+// handleTurnstileVerify exchanges a one-time Turnstile token for the signed
+// session cookie that unlocks the data endpoints. It sits outside the
+// requireTurnstile group: it is the only route that accepts a raw token, so the
+// token stays out of query strings and cookies of data requests.
+func handleTurnstileVerify(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get("X-Turnstile-Token")
+	if token == "" {
+		token = r.URL.Query().Get("turnstile_token")
+	}
+	if token == "" || !verifyTurnstileToken(token) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Turnstile verification failed."})
+		return
+	}
+	setTurnstileSessionCookie(w, r)
 	jsonOK(w, map[string]bool{"ok": true})
 }
 
@@ -116,17 +136,9 @@ func requireTurnstile(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		token := r.Header.Get("X-Turnstile-Token")
-		if token == "" {
-			token = r.URL.Query().Get("turnstile_token")
-		}
-		if token == "" || !verifyTurnstileToken(token) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Turnstile verification required."})
-			return
-		}
-		setTurnstileSessionCookie(w, r)
-		next.ServeHTTP(w, r)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Turnstile verification required."})
+		return
 	})
 }
