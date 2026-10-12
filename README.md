@@ -9,12 +9,14 @@ UAVChum is a Go web app that brings together weather forecasts, drone flight ass
 ## Features
 
 ### Weather
+
 - Current conditions with feels-like, humidity, wind, gusts, pressure, and cloud cover
 - 24-hour hourly scroll
 - 7-day forecast
 - Interactive location map
 
 ### Drone
+
 - Go / Marginal / No-Go flight assessment based on live weather
 - 24-hour fly window with per-hour colour coding
 - Pre-flight checklist
@@ -28,6 +30,7 @@ UAVChum is a Go web app that brings together weather forecasts, drone flight ass
 - Local drone laws tile — links to the official regulator for US, CA, AU, NZ, and UK
 
 ### Aviation
+
 - METAR with full decode (flight category, wind, visibility, ceiling, altimeter)
 - TAF terminal forecast
 - SIGMETs & AIRMETs
@@ -38,15 +41,15 @@ UAVChum is a Go web app that brings together weather forecasts, drone flight ass
 
 ## Data Sources
 
-| Source | Used for |
-|--------|----------|
-| [Open-Meteo](https://open-meteo.com) | Weather forecasts & current conditions |
-| [Open-Meteo Geocoding](https://open-meteo.com/en/docs/geocoding-api) | Location search |
-| [OpenAIP](https://www.openaip.net) | EU/global airspace (cached 24 h) |
-| [FAA ArcGIS](https://adds-faa.opendata.arcgis.com) | US Class B/C/D airspace & LAANC grids |
-| [aviationweather.gov](https://aviationweather.gov) | METARs, TAFs, SIGMETs, PIREPs, TFRs |
-| [Blitzortung](https://www.blitzortung.org) | Real-time lightning strikes |
-| [ADS-B Exchange / adsb.lol](https://adsb.lol) | Live aircraft traffic |
+| Source                                                               | Used for                               |
+| -------------------------------------------------------------------- | -------------------------------------- |
+| [Open-Meteo](https://open-meteo.com)                                 | Weather forecasts & current conditions |
+| [Open-Meteo Geocoding](https://open-meteo.com/en/docs/geocoding-api) | Location search                        |
+| [OpenAIP](https://www.openaip.net)                                   | EU/global airspace (cached 24 h)       |
+| [FAA ArcGIS](https://adds-faa.opendata.arcgis.com)                   | US Class B/C/D airspace & LAANC grids  |
+| [aviationweather.gov](https://aviationweather.gov)                   | METARs, TAFs, SIGMETs, PIREPs, TFRs    |
+| [Blitzortung](https://www.blitzortung.org)                           | Real-time lightning strikes            |
+| [ADS-B Exchange / adsb.lol](https://adsb.lol)                        | Live aircraft traffic                  |
 
 No accounts, no API keys, no rate-limit tokens needed.
 
@@ -99,6 +102,14 @@ For production behind Cloudflare Tunnel, set:
 ```bash
 UAVCHUM_ENV=production
 ```
+
+The `.env` on the server also holds these keys (see `deploy/cloudflare.md`):
+
+| Variable                                      | Why                                                                                                                                                                                                               |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TUNNEL_TOKEN`                                | Cloudflare Tunnel sidecar (compose)                                                                                                                                                                               |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | bot protection; widget hides itself if unset                                                                                                                                                                      |
+| `CARTO_BASERMAPS_KEY`                         | CARTO basemap tiles now require a key (free, e-mail only, at <https://carto.com/basemaps/apikey/>). It is a public origin-restricted key: the server passes it to the browser, which appends it to tile requests. |
 
 ---
 

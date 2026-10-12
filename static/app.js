@@ -32,7 +32,8 @@ function loadPendingRestoreLocation() {
 async function ensureTurnstileSession() {
     if (_turnstileSessionReady || !window._turnstileToken) return;
     if (!_turnstileSessionPromise) {
-        _turnstileSessionPromise = fetchApi('/api/turnstile/session', {
+        _turnstileSessionPromise = fetchApi('/api/turnstile/verify', {
+            method: 'POST',
             forceTurnstileToken: true,
             skipTurnstileSession: true,
         }).then(() => {
@@ -50,10 +51,11 @@ async function fetchApi(url, options = {}) {
         await ensureTurnstileSession();
     }
     const headers = {};
-    if (window._turnstileToken && (options.forceTurnstileToken || !_turnstileSessionReady)) {
-        headers["X-Turnstile-Token"] = window._turnstileToken;
-    }
-    const resp = await fetch(url, { headers });
+    const resp = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        credentials: 'same-origin',
+    });
     let payload = null;
     try { payload = await resp.json(); } catch (e) { /* ignore */ }
     if (!resp.ok) {
@@ -1154,7 +1156,13 @@ function renderAviation(d) {
 }
 
 /* ── Map constants ─────────────────────────────────────────────── */
-const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+// CARTO requires an API key on basemap tiles since Oct 2026. It lives here
+// rather than in the page because Cloudflare Rocket Loader rewrites inline
+// scripts into a form the nonce CSP rejects. The key is public by design and
+// restricted to our origin, like the Turnstile site key.
+const CARTO_KEY  = 'cb1_4ict_1_4f2729b2b419a340de0907a4';
+const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+    + '?key=' + encodeURIComponent(CARTO_KEY);
 const TILE_ATTR  = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>';
 const RADAR_ATTR = 'Radar © <a href="https://www.rainviewer.com">RainViewer</a>';
 

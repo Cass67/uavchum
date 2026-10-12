@@ -47,3 +47,34 @@ func TestRequireTurnstileAcceptsValidSessionCookieWithoutToken(t *testing.T) {
 		t.Fatalf("expected downstream status %d, got %d", http.StatusNoContent, rr.Code)
 	}
 }
+
+// TestRequireTurnstileRejectsRawTokens locks the design decision: data
+// endpoints never accept a raw Turnstile token, only the signed session cookie.
+// Tokens are single-use at Cloudflare, so replaying one against every endpoint
+// could not work anyway, and keeping the token out of the data path means one
+// exchange point to audit.
+func TestRequireTurnstileRejectsRawTokens(t *testing.T) {
+	originalSecret := turnstileSecretKey
+	turnstileSecretKey = "test-secret"
+	t.Cleanup(func() { turnstileSecretKey = originalSecret })
+
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"header", "some-token"},
+		{"query", "some-token"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/weather", nil)
+		if tc.name == "header" {
+			req.Header.Set("X-Turnstile-Token", tc.token)
+		} else {
+			req.URL.RawQuery = "turnstile_token=" + tc.token
+		}
+		rr := httptest.NewRecorder()
+		requireTurnstile(http.NotFoundHandler()).ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("%s token accepted without a session cookie (status %d)", tc.name, rr.Code)
+		}
+	}
+}

@@ -59,6 +59,16 @@
         dest: "{{ app_dir }}/../.config/systemd/user/uavchum-stack.service"
         mode: "0644"
 
+    - name: Wait for the app to answer
+      ansible.builtin.command: >-
+        podman exec uavchum_app_1 /bin/busybox
+        wget -qO- http://localhost:5555/healthz
+      changed_when: false
+      until: health.stdout | trim == "ok"
+      retries: 10
+      delay: 3
+      register: health
+
     - name: Reload user systemd
       ansible.builtin.systemd:
         daemon_reload: true
