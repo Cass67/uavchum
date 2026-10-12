@@ -115,3 +115,7 @@ $RECYCLE.BIN/
 
 # Compiled binary (go build output; deploy.yml excludes it too).
 /uavchum
+config.toml
+/.repo-guard/reports/
+
+# Python bytecode and caches.
