@@ -102,12 +102,6 @@ func setTurnstileSessionCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleTurnstileSession(w http.ResponseWriter, r *http.Request) {
-	// Reached only through requireTurnstile, so arriving here already proves a
-	// valid session cookie. The body just lets the frontend confirm it.
-	jsonOK(w, map[string]bool{"ok": true})
-}
-
 // handleTurnstileVerify exchanges a one-time Turnstile token for the signed
 // session cookie that unlocks the data endpoints. It is deliberately the only
 // route that accepts a raw token, and it is the only way to obtain a session:
