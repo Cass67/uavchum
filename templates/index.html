@@ -395,7 +395,7 @@
      origin-restricted to this host, so it is safe to inline here. -->
 <script nonce="{{.CspNonce}}">window.UAVCHUM_CARTO_KEY = "{{.CartoBasemapsKey}}";</script>
 {{end}}
-<script nonce="{{.CspNonce}}" src="/static/app.js?v=29" data-cfasync="false"></script>
+<script nonce="{{.CspNonce}}" src="/static/app.js?v=30" data-cfasync="false"></script>
 {{if .TurnstileSiteKey}}
 <!-- Cloudflare ships Turnstile's api.js continuously and publishes no SRI
      hash for it; pinning an integrity digest here would break the widget the
