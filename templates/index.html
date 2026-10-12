@@ -393,7 +393,7 @@
 {{if .CartoBasemapsKey}}
 <!-- CARTO now requires a key on its basemap tiles; the key is public and
      origin-restricted to this host, so it is safe to inline here. -->
-<script nonce="{{.CspNonce}}">window.UAVCHUM_CARTO_KEY = {{printf "%q" .CartoBasemapsKey}};</script>
+<script nonce="{{.CspNonce}}">window.UAVCHUM_CARTO_KEY = "{{.CartoBasemapsKey}}";</script>
 {{end}}
 <script nonce="{{.CspNonce}}" src="/static/app.js?v=29" data-cfasync="false"></script>
 {{if .TurnstileSiteKey}}
