@@ -1154,11 +1154,18 @@ function renderAviation(d) {
 }
 
 /* ── Map constants ─────────────────────────────────────────────── */
-// CARTO requires an API key on basemap tiles since Oct 2026. The key is injected
-// by the page as window.UAVCHUM_CARTO_KEY (public, restricted to our origin).
-const CARTO_KEY  = window.UAVCHUM_CARTO_KEY || '';
-const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-    + (CARTO_KEY ? '?key=' + encodeURIComponent(CARTO_KEY) : '');
+// CARTO requires an API key on basemap tiles since Oct 2026. The page carries it
+// in #cartoKey[data-key] (a data attribute, not an inline script: Cloudflare
+// Rocket Loader rewrites inline scripts and our nonce CSP blocks the rewrite).
+function cartoKey() {
+    return document.getElementById('cartoKey')?.dataset.key || '';
+}
+// Resolved per map init so the constant does not depend on script order.
+function tileUrl() {
+    const key = cartoKey();
+    return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+        + (key ? '?key=' + encodeURIComponent(key) : '');
+}
 const TILE_ATTR  = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>';
 const RADAR_ATTR = 'Radar © <a href="https://www.rainviewer.com">RainViewer</a>';
 
@@ -1916,7 +1923,7 @@ function setupDroneMap(lat, lon, name) {
         droneMap.setView([lat, lon], 11);
     } else {
         droneMap = L.map('droneMap', { zoomControl: true });
-        L.tileLayer(TILE_URL, {
+        L.tileLayer(tileUrl(), {
             attribution: TILE_ATTR + ' | <a href="https://www.openaip.net">OpenAIP</a>',
             subdomains: 'abcd',
             maxZoom: 19,
