@@ -390,14 +390,7 @@
 </div><!-- /.app -->
 
 <script src="/static/vendor/leaflet/leaflet.js" data-cfasync="false"></script>
-{{if .CartoBasemapsKey}}
-<!-- CARTO now requires a key on its basemap tiles. The key is public and
-     origin-restricted to this host. Kept in a data attribute rather than an
-     inline script: Cloudflare Rocket Loader rewrites inline scripts into a
-     form that trips our nonce CSP, so inline JS must stay avoided here. -->
-<div id="cartoKey" data-key="{{.CartoBasemapsKey}}" hidden></div>
-{{end}}
-<script nonce="{{.CspNonce}}" src="/static/app.js?v=31" data-cfasync="false"></script>
+<script nonce="{{.CspNonce}}" src="/static/app.js?v=32" data-cfasync="false"></script>
 {{if .TurnstileSiteKey}}
 <!-- Cloudflare ships Turnstile's api.js continuously and publishes no SRI
      hash for it; pinning an integrity digest here would break the widget the

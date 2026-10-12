@@ -1,0 +1,13 @@
+title = "uavchum gitleaks allowlist"
+
+# The CARTO basemaps tile key is public by design: the browser sends it on every
+# tile request and it is restricted to our origin in the CARTO dashboard, the
+# same trust level as the Cloudflare Turnstile site key. Reviewed 2026-10-12.
+[[allowlists]]
+id = "carto-basemaps-public-tile-key"
+description = "public origin-restricted CARTO tile key in static/app.js"
+paths = ["static/app.js"]
+regexTarget = "line"
+regexes = [
+  "cb1_[a-z0-9_]+",
+]

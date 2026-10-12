@@ -25,8 +25,6 @@ var (
 	tmpl       *template.Template
 	logger     = slog.Default()
 
-	cartoBasemapsKey string
-
 	icaoRE     = regexp.MustCompile(`^[A-Z][A-Z0-9]{2,3}$`)
 	ccRE       = regexp.MustCompile(`^[A-Z]{2}$`)
 	callsignRE = regexp.MustCompile(`^[A-Z0-9]{3,8}$`)
@@ -57,7 +55,9 @@ func newNonce() string {
 func main() {
 	loadDotEnv()
 	loadTurnstileConfig()
-	cartoBasemapsKey = loadCartoBasemapsKey(dotEnvPaths())
+	if k := loadCartoBasemapsKey(dotEnvPaths()); k == "" {
+		logger.Warn("CARTO_BASERMAPS_KEY is unset; map tiles render watermarked")
+	}
 
 	httpClient = &http.Client{
 		Timeout: 30 * time.Second,
@@ -140,8 +140,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := tmpl.ExecuteTemplate(w, "index.html", struct {
 		CspNonce         string
 		TurnstileSiteKey string
-		CartoBasemapsKey string
-	}{nonce, turnstileSiteKey, cartoBasemapsKey}); err != nil {
+	}{nonce, turnstileSiteKey}); err != nil {
 		logger.Error("template execute failed", "err", err)
 	}
 }

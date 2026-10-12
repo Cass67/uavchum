@@ -67,9 +67,10 @@ func loadDotEnv() {
 	}
 }
 
-// CARTO basemap keys are public, origin-restricted tile keys: they are embedded
-// in the browser's tile URL, so the server reads them and passes them to the
-// template instead of exporting them to the process env.
+// CARTO basemap keys are public, origin-restricted tile keys. The deployed key
+// is committed in static/app.js because Cloudflare Rocket Loader blocks inline
+// scripts under our nonce CSP, so the server cannot hand it to the page; the
+// server only checks presence and warns if it is missing.
 var cartoBasemapsKeys = []string{"CARTO_BASERMAPS_KEY", "CARTO_API_KEY"}
 
 // loadCartoBasemapsKey resolves the basemap key from the process env first, then
