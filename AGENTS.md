@@ -35,3 +35,7 @@ Treat all credentials and private material as inaccessible by default.
 - Keep existing file permissions strict on secret-adjacent files.
 - Favor least privilege, least persistence, and redaction in every step.
 - If a safer default can be enforced through local config or ignore files, prefer enforcing it instead of relying only on instructions.
+
+# Repo Map: Turnstile Auth Flow
+
+widget → `turnstileSuccessCallback` (static/app.js) → `POST /api/turnstile/verify` with `X-Turnstile-Token` → HMAC session cookie → `requireTurnstile` gates every `/api/*` data route. Only verify accepts a raw token. `TestTurnstileHappyPath` pins this whole chain; it must pass before and after any change to it.

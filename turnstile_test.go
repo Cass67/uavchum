@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,5 +78,56 @@ func TestRequireTurnstileRejectsRawTokens(t *testing.T) {
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("%s token accepted without a session cookie (status %d)", tc.name, rr.Code)
 		}
+	}
+}
+
+// TestTurnstileHappyPath walks the path a real browser takes: the widget token
+// is exchanged at /api/turnstile/verify for a cookie, and that cookie unlocks a
+// gated route. It also pins that app.js still sends the header verify reads,
+// since that is the line whose removal took the whole site down.
+func TestTurnstileHappyPath(t *testing.T) {
+	siteverify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"success":true}`)
+	}))
+	t.Cleanup(siteverify.Close)
+	origSecret, origURL := turnstileSecretKey, turnstileVerifyURL
+	turnstileSecretKey, turnstileVerifyURL = "test-secret", siteverify.URL
+	t.Cleanup(func() { turnstileSecretKey, turnstileVerifyURL = origSecret, origURL })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/turnstile/verify", nil)
+	req.Header.Set("X-Turnstile-Token", "widget-token")
+	rr := httptest.NewRecorder()
+	handleTurnstileVerify(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("verify with a valid token: status %d", rr.Code)
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != turnstileSessionCookieName {
+		t.Fatalf("verify did not set the session cookie: %v", cookies)
+	}
+
+	gated := requireTurnstile(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for _, withCookie := range []bool{true, false} {
+		req = httptest.NewRequest(http.MethodGet, "/api/weather", nil)
+		want := http.StatusForbidden
+		if withCookie {
+			req.AddCookie(cookies[0])
+			want = http.StatusOK
+		}
+		rr = httptest.NewRecorder()
+		gated.ServeHTTP(rr, req)
+		if rr.Code != want {
+			t.Errorf("gated route withCookie=%v: status %d, want %d", withCookie, rr.Code, want)
+		}
+	}
+
+	js, err := os.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(js), `"X-Turnstile-Token"`) || !strings.Contains(string(js), "/api/turnstile/verify") {
+		t.Fatal("static/app.js no longer sends X-Turnstile-Token to /api/turnstile/verify")
 	}
 }

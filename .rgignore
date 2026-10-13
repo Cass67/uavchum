@@ -77,3 +77,6 @@ $RECYCLE.BIN/
 *.swo
 *~
 
+config.toml
+/.repo-guard/reports/
+
